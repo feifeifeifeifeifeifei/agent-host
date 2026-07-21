@@ -1,8 +1,11 @@
+import logging
 import time
 from agent_host.channels.base import Channel
 from agent_host.models import InboundMessage
 
 API = "https://api.telegram.org/bot{token}/{method}"
+
+log = logging.getLogger(__name__)
 
 
 class TelegramChannel(Channel):
@@ -35,7 +38,12 @@ class TelegramChannel(Channel):
                 retry_after = resp.json().get("parameters", {}).get("retry_after", 1)
                 time.sleep(retry_after)
                 continue
+            if not (200 <= resp.status_code < 300):
+                body = getattr(resp, "text", "") or str(resp.json())
+                log.warning("telegram sendMessage failed: status=%s body=%s",
+                            resp.status_code, body[:200])
             return
+        log.warning("telegram sendMessage gave up after repeated 429s")
         return
 
     def parse_update(self, raw: dict) -> InboundMessage | None:

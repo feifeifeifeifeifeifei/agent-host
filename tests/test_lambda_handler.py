@@ -32,3 +32,17 @@ def test_http_event_with_bad_secret_is_rejected():
              "body": "{}"}
     resp = _handler_with(host)(event)
     assert resp["statusCode"] == 403 and not host.handled
+
+
+class FakeCfgNoSecret:
+    telegram_webhook_secret = ""
+    store_backend = "dynamo"
+
+
+def test_http_event_with_unconfigured_secret_fails_closed():
+    host = FakeHost()
+    event = {"headers": {"x-telegram-bot-api-secret-token": "anything"},
+             "body": json.dumps({"message": {"chat": {"id": 1}, "text": "hi"}})}
+    resp = lh.lambda_handler(event, None, build_host=lambda cfg: host,
+                              load_config=lambda: FakeCfgNoSecret())
+    assert resp["statusCode"] == 403 and not host.handled

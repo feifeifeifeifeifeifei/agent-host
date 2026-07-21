@@ -40,5 +40,11 @@ def build_agents(config: Config) -> list:
 
 
 def build_host(config: Config, dry_run: bool = False) -> Host:
-    return Host(build_agents(config), build_services(config, dry_run=dry_run),
+    agents = build_agents(config)
+    if config.default_agent not in {a.name for a in agents}:
+        raise ValueError(
+            f"default_agent {config.default_agent!r} not in enabled agents "
+            f"{[a.name for a in agents]}"
+        )
+    return Host(agents, build_services(config, dry_run=dry_run),
                 default_agent=config.default_agent)

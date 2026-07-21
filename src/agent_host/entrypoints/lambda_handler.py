@@ -1,3 +1,4 @@
+import hmac
 import json
 from agent_host import registry
 from agent_host.config import Config
@@ -19,10 +20,11 @@ def lambda_handler(event, context=None, build_host=registry.build_host,
 
     # HTTP path (Lambda Function URL → Telegram webhook)
     headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
-    if cfg.telegram_webhook_secret:
-        got = headers.get("x-telegram-bot-api-secret-token")
-        if got != cfg.telegram_webhook_secret:
-            return {"statusCode": 403, "body": "forbidden"}
+    secret = cfg.telegram_webhook_secret
+    got = headers.get("x-telegram-bot-api-secret-token") or ""
+    if not secret or not hmac.compare_digest(got, secret):
+        # fail closed: an unconfigured secret leaves a public (auth=NONE) URL open
+        return {"statusCode": 403, "body": "forbidden"}
 
     body = json.loads(event.get("body") or "{}")
     host = build_host(cfg)

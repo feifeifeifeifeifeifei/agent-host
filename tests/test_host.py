@@ -55,3 +55,31 @@ def test_failing_scheduled_agent_does_not_crash_host():
         def run_scheduled(self, svc): raise RuntimeError("kaboom")
     host = Host([Boom()], _svc(), default_agent="boom")
     host.run_scheduled("boom")   # does not raise
+
+def test_message_from_unauthorized_chat_id_is_dropped():
+    ran = {}
+    class Chat(Agent):
+        name = "chat"
+        def handle_message(self, msg, svc):
+            ran["called"] = True
+            return "CHAT"
+    ch = TelegramChannel(token="t", chat_id="42", dry_run=True)
+    cfg = type("C", (), {"telegram_chat_id": "42"})()
+    svc = Services(channel=ch, llm=None, store=FakeStore(), config=cfg)
+    host = Host([Chat()], svc, default_agent="chat")
+    reply = host.handle_message({"message": {"chat": {"id": 999}, "text": "hello"}})
+    assert reply is None
+    assert "called" not in ran            # agent never ran
+    assert ch.sent == []                  # nothing was sent
+
+def test_message_from_authorized_chat_id_is_still_handled():
+    ch = TelegramChannel(token="t", chat_id="42", dry_run=True)
+    cfg = type("C", (), {"telegram_chat_id": "42"})()
+    svc = Services(channel=ch, llm=None, store=FakeStore(), config=cfg)
+    class Chat(Agent):
+        name = "chat"
+        def handle_message(self, msg, svc): return "CHAT"
+    host = Host([Chat()], svc, default_agent="chat")
+    reply = host.handle_message({"message": {"chat": {"id": 42}, "text": "hello"}})
+    assert reply == "CHAT"
+    assert ch.sent[-1]["text"] == "CHAT"

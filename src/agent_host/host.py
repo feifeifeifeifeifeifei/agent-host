@@ -38,6 +38,10 @@ class Host:
         msg = self._services.channel.parse_update(update)
         if msg is None:
             return None
+        allowed = getattr(self._services.config, "telegram_chat_id", None)
+        if allowed is not None and str(msg.chat_id) != str(allowed):
+            log.warning("dropping message from unauthorized chat_id %s", msg.chat_id)
+            return None
         agent = self._route(msg.text)
         try:
             reply = agent.handle_message(msg, self._svc_for(agent))
