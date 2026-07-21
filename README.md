@@ -1,5 +1,7 @@
 # agent-host
 
+> 🇨🇳 中文说明见 [README.zh.md](README.zh.md)。
+
 `agent-host` is a small, pluggable **host** for running Telegram-connected AI agents. The host
 owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a storage backend
 (SQLite locally, DynamoDB in the cloud), and message routing — while individual **agents** plug
