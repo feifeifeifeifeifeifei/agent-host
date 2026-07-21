@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Secrets & local state
+.env
+*.sqlite
+*.db
+.DS_Store
+
+# Build / deploy artifacts
+dist/
+build/
+*.zip
