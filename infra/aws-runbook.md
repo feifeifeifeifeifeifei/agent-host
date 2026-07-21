@@ -1,5 +1,7 @@
 # AWS Deploy Runbook — agent-host
 
+> 🇨🇳 中文版见 [aws-runbook.zh.md](aws-runbook.zh.md)。
+
 This is a click-by-click guide to deploying `agent-host` on AWS Lambda, with Telegram as the
 messaging channel and DynamoDB as the storage backend. It assumes **no prior AWS experience** —
 every step names the exact console path or the exact CLI command, what to type/select, and how
