@@ -1879,8 +1879,10 @@ Include: one-paragraph overview (agent host + pluggable agents), the local quick
 (`python -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"`, copy `.env.example`
 to `.env` and fill it, `pytest`, `python -m agent_host.entrypoints.local_run run brief`,
 `python -m agent_host.entrypoints.local_run serve`), a "how to add a new agent" section
-(subclass `Agent`, implement `run_scheduled`/`handle_message`, add to `AGENT_FACTORIES` in
-`registry.py`, add its name to `ENABLED_AGENTS`), and a pointer to `infra/aws-runbook.md`.
+(subclass `Agent`, implement `run_scheduled` and/or `handle_message`, register it in
+`registry.py` by adding the class to the dict returned by the `_agent_factories()` helper —
+there is NO module-level `AGENT_FACTORIES` constant, reference the function — then add its
+name to `ENABLED_AGENTS`), and a pointer to `infra/aws-runbook.md`.
 
 - [ ] **Step 3: Commit**
 
