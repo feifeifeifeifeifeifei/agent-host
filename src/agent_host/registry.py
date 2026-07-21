@@ -10,6 +10,9 @@ def build_store(config: Config) -> Store:
     if config.store_backend == "sqlite":
         from agent_host.store.sqlite_store import SqliteStore
         return SqliteStore(config.sqlite_path)
+    if config.store_backend == "dynamo":
+        from agent_host.store.dynamo_store import DynamoStore
+        return DynamoStore(config.dynamo_table)
     raise ValueError(f"unknown store_backend: {config.store_backend}")
 
 
