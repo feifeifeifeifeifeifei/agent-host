@@ -1,15 +1,56 @@
 # agent-host
 
-> 🇨🇳 中文说明见 [README.zh.md](README.zh.md)。
+> 🇨🇳 中文说明见 [README.zh.md](README.zh.md).
 
-`agent-host` is a small, pluggable **host** for running Telegram-connected AI agents. The host
-owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a storage backend
-(SQLite locally, DynamoDB in the cloud), and message routing — while individual **agents** plug
-into it to do actual work. Two agents ship out of the box: `BriefAgent`, which composes and sends
-a daily news brief on a schedule, and `ChatAgent`, which holds free-form conversations with
-per-chat memory. The same code runs two ways: as a local long-polling process for development, or
-as an AWS Lambda function (Telegram webhook + EventBridge daily schedule) in production — see
-[`infra/aws-runbook.md`](infra/aws-runbook.md) for the click-by-click deploy guide.
+A small, pluggable **host** for running Telegram-connected AI agents, running **serverless on AWS**. The host owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a pluggable storage backend, and message routing — while individual **agents** plug in to do the work. Two ship out of the box: `BriefAgent` (a scheduled daily news brief) and `ChatAgent` (free-form conversation with per-chat memory). The *same* codebase runs two ways: a local long-polling process for development, and an AWS Lambda function in production.
+
+## Architecture
+
+One Lambda function, two entry paths, one table:
+
+- A **Telegram webhook** (delivered to a **Lambda Function URL**) drives live chat.
+- A daily **EventBridge schedule** fires the *same* Lambda to compose and push the news brief.
+- **DynamoDB** holds conversation memory and news-dedup state, so the stateless function has somewhere durable to remember.
+
+```mermaid
+flowchart LR
+    subgraph Triggers
+      TG[Telegram user message]
+      EB[EventBridge Scheduler<br/>daily cron]
+    end
+    TG -->|HTTPS POST + secret-token header| FU[Lambda Function URL<br/>auth: NONE]
+    FU --> L[AWS Lambda: agent-host<br/>Python 3.12]
+    EB -->|const JSON: mode=scheduled, agent=brief| L
+    L <-->|GetItem / PutItem| D[(DynamoDB<br/>single-table, pk only)]
+    L -->|prompt| OR[OpenRouter LLM]
+    L -->|sendMessage| OUT[Telegram → user]
+```
+
+**Why these choices:**
+
+- **Serverless (Lambda).** A personal bot is idle almost all the time; pay-per-invocation means ~$0/month within the free tier and nothing to keep running or patch.
+- **Function URL, not API Gateway.** The only caller is Telegram's server, so a Lambda Function URL is the minimal public HTTPS endpoint. It's `auth: NONE` (Telegram can't sign AWS SigV4 requests), so the endpoint is guarded **in code**: a **fail-closed secret-token check** (`hmac.compare_digest`; an unset secret returns `403`, never open) plus a **sender allow-list** (only the owner's `chat_id` is served).
+- **DynamoDB, single table.** Lambda's filesystem is ephemeral, so state must live externally. The code only ever does `GetItem` / `PutItem` against a single partition key (namespaces are baked into the key, e.g. `brief#memory#42`) — so the IAM policy grants exactly those two actions on exactly that one table. **Least privilege by construction.**
+- **Scheduling lives outside the code.** Lambda is passive and can't wake itself, so "run the brief at 4pm" lives in an EventBridge rule, not an env var. Each agent that needs a schedule gets its own rule, so different agents can run at different times with **zero code change**.
+
+## Tech stack & what it demonstrates
+
+| Layer | What's used |
+|---|---|
+| Language / runtime | Python 3.12 |
+| Compute | AWS Lambda (serverless, x86_64) + Lambda Function URL |
+| Scheduling | Amazon EventBridge Scheduler (cron) |
+| Storage | Amazon DynamoDB (on-demand, single-table, one partition key) |
+| Security | IAM least-privilege execution role; fail-closed webhook secret; sender allow-list |
+| Config | `pydantic-settings` (12-factor: env-driven; secrets never committed) |
+| Integrations | Telegram Bot API (webhook + long-poll); OpenRouter (multi-model with fallbacks) |
+| Packaging | `manylinux` / x86_64 wheels built for the Lambda runtime; flat zip |
+| Testing | `pytest` + `moto` (mock DynamoDB); fakes / dry-run; env-gated live e2e |
+| Observability | Amazon CloudWatch Logs |
+
+**Engineering practices on display:** a pluggable agent architecture (adding an agent ≈ one class + one registry line), 12-factor configuration, least-privilege IAM, cross-platform dependency packaging, webhook security, and test-driven development. The full click-by-click deployment guide lives in **[`infra/aws-runbook.md`](infra/aws-runbook.md)** ([中文版](infra/aws-runbook.zh.md)).
+
+---
 
 ## Local quickstart
 

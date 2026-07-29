@@ -16,3 +16,6 @@ venv/
 dist/
 build/
 *.zip
+
+# Personal notes (personal reading only, not for the repo)
+docs/my-notes/

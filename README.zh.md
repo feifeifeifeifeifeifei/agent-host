@@ -2,7 +2,55 @@
 
 > English version: [README.md](README.md)。代码、命令、标识符、配置键一律保留原样,不翻译。
 
-`agent-host` 是一个小巧、可插拔的**宿主(host)**,用来运行接入 Telegram 的 AI agent。宿主持有共享的底层设施——一个 Telegram 通道、一个基于 OpenRouter 的 LLM 客户端、一个存储后端(本地用 SQLite,云上用 DynamoDB),以及消息路由——而各个**agent** 插入其中去干实际的活。开箱自带两个 agent:`BriefAgent`,按计划组装并发送每日新闻简报;`ChatAgent`,进行带每会话记忆的自由对话。同一套代码有两种跑法:开发时作为本地 long-polling 进程,生产时作为 AWS Lambda 函数(Telegram webhook + EventBridge 每日定时)——点击级部署指南见 [`infra/aws-runbook.zh.md`](infra/aws-runbook.zh.md)。
+`agent-host` 是一个小巧、可插拔的**宿主(host)**,用来运行接入 Telegram 的 AI agent,**以 serverless 方式跑在 AWS 上**。宿主持有共享的底层设施——一个 Telegram 通道、一个基于 OpenRouter 的 LLM 客户端、一个可插拔的存储后端(本地 SQLite,云上 DynamoDB),以及消息路由——各个 **agent** 插进来干实际的活。开箱自带两个:`BriefAgent`(按计划推送每日新闻简报)和 `ChatAgent`(带每会话记忆的自由对话)。**同一套代码**有两种跑法:本地 long-polling 进程(开发),AWS Lambda 函数(生产)。
+
+## 架构总览
+
+一个 Lambda 函数、两条入口、一张表:
+
+- **Telegram webhook**(经由 **Lambda Function URL**)驱动实时聊天。
+- 每日 **EventBridge 定时**触发**同一个** Lambda,去组装并推送新闻简报。
+- **DynamoDB** 保存对话记忆和新闻去重状态——给这个无状态的函数一个持久的"记忆仓库"。
+
+```mermaid
+flowchart LR
+    subgraph 触发源
+      TG[你在 Telegram 发消息]
+      EB[EventBridge 定时器<br/>每日 cron]
+    end
+    TG -->|HTTPS POST + secret 头| FU[Lambda Function URL<br/>auth: NONE]
+    FU --> L[AWS Lambda: agent-host<br/>Python 3.12]
+    EB -->|常量 JSON: mode=scheduled, agent=brief| L
+    L <-->|GetItem / PutItem| D[(DynamoDB<br/>单表, 仅 pk)]
+    L -->|prompt| OR[OpenRouter 大模型]
+    L -->|sendMessage| OUT[Telegram → 你]
+```
+
+**为什么这么设计:**
+
+- **Serverless(Lambda)。** 个人 bot 绝大多数时间是空闲的;按调用计费意味着免费额度内 ~$0/月,也没有一直开着的服务器要运维、打补丁。
+- **用 Function URL 而不是 API Gateway。** 唯一的调用方是 Telegram 服务器,所以 Lambda Function URL 就是那个最小的公开 HTTPS 端点。它是 `auth: NONE`(Telegram 无法对 AWS SigV4 请求签名),因此保护落在**代码里**:一个**失败关闭的 secret 校验**(`hmac.compare_digest`;secret 未配置直接返 `403`,绝不敞开)外加一个**发件人白名单**(只服务本人的 `chat_id`)。
+- **DynamoDB 单表。** Lambda 文件系统是临时的,状态必须放到外部。代码全程只对一个分区键做 `GetItem` / `PutItem`(命名空间编进 key 里,如 `brief#memory#42`)——所以 IAM 策略也就只授予这两个动作、只限这一张表。**最小权限,天然如此。**
+- **调度不写在代码里。** Lambda 是被动的、不能自己唤醒自己,所以"下午 4 点跑简报"住在 EventBridge 规则里,而不是环境变量。每个需要定时的 agent 各有一条规则,于是不同 agent 可以在不同时间跑,**零代码改动**。
+
+## 技术栈与亮点
+
+| 层面 | 用了什么 |
+|---|---|
+| 语言 / 运行时 | Python 3.12 |
+| 计算 | AWS Lambda(serverless,x86_64)+ Lambda Function URL |
+| 调度 | Amazon EventBridge Scheduler(cron) |
+| 存储 | Amazon DynamoDB(按需计费,单表,单分区键) |
+| 安全 | IAM 最小权限执行角色;失败关闭的 webhook secret;发件人白名单 |
+| 配置 | `pydantic-settings`(十二要素:环境变量驱动;密钥绝不入库) |
+| 集成 | Telegram Bot API(webhook + long-poll);OpenRouter(多模型带回退) |
+| 打包 | 为 Lambda 运行时构建的 `manylinux` / x86_64 wheel;扁平 zip |
+| 测试 | `pytest` + `moto`(模拟 DynamoDB);fake / dry-run;环境变量开关的真实 e2e |
+| 可观测 | Amazon CloudWatch Logs |
+
+**体现的工程实践:** 可插拔的 agent 架构(加一个 agent ≈ 一个类 + 一行注册)、十二要素配置、最小权限 IAM、跨平台依赖打包、webhook 安全、测试驱动开发。完整的点击级部署指南见 **[`infra/aws-runbook.zh.md`](infra/aws-runbook.zh.md)**([English](infra/aws-runbook.md))。
+
+---
 
 ## 本地快速开始
 
