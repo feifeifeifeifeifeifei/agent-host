@@ -1,8 +1,22 @@
 import html
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 from agent_host.agents.base import Agent
+from agent_host.agents.stock.calendar import is_trading_day as _is_trading_day
+from agent_host.agents.stock.composer import RecapData, StockComposer
 from agent_host.agents.stock.universe import load_universe
 from agent_host.agents.stock.watchlist import WatchlistManager
+
+INDEX_NAMES = {
+    "^GSPC": "S&P 500", "^IXIC": "Nasdaq Composite", "^DJI": "Dow Jones",
+    "^SOX": "PHLX Semiconductor", "^TNX": "US 10Y Yield",
+}
+
+
+def _today_in(tz: str) -> date:
+    return datetime.now(ZoneInfo(tz)).date()
+
 
 HELP = (
     "<b>StockAgent — daily US-market recap</b>\n"
@@ -19,14 +33,20 @@ HELP = (
 
 class StockAgent(Agent):
     name = "stock"
-    # The real 4pm-PT MON-FRI EventBridge schedule is wired in a later phase;
-    # the skeleton is command-only.
-    schedule = None
+    schedule = "0 16 * * 1-5"          # 16:00 MON-FRI (tz + holiday gating in code)
     commands = ["/tickers", "/add", "/remove", "/reset", "/help", "/confirm", "/cancel"]
-    intent = "US market daily recap and watchlist management."
+    intent = "Daily after-close US-market recap."
 
-    def __init__(self, universe=None):
+    def __init__(self, *, universe=None, market=None, news=None,
+                 watchlist_factory=None, composer_factory=None,
+                 is_trading_day=_is_trading_day, today_fn=_today_in):
         self._universe = universe
+        self._market = market
+        self._news = news
+        self._watchlist_factory = watchlist_factory
+        self._composer_factory = composer_factory
+        self._is_trading_day = is_trading_day
+        self._today_fn = today_fn
 
     def _get_universe(self, svc):
         if self._universe is not None:
@@ -36,9 +56,22 @@ class StockAgent(Agent):
         return load_universe(svc.store)
 
     def _wm(self, svc):
+        if self._watchlist_factory is not None:
+            return self._watchlist_factory()
         chat_id = getattr(svc.config, "telegram_chat_id", "0")
         max_t = getattr(svc.config, "stock_max_tickers", 50)
         return WatchlistManager(svc.store, chat_id, self._get_universe(svc), max_tickers=max_t)
+
+    def _resolve_sources(self, svc):
+        market = self._market
+        if market is None:
+            from agent_host.agents.stock.sources.yfinance_source import YFinanceSource
+            market = YFinanceSource()
+        news = self._news
+        if news is None:
+            from agent_host.agents.stock.sources.finnhub_source import FinnhubSource
+            news = FinnhubSource(getattr(svc.config, "finnhub_api_key", ""))
+        return market, news
 
     # ------------------------------------------------------------------ routing
     def handle_message(self, msg, svc):
@@ -94,12 +127,87 @@ class StockAgent(Agent):
             return "Nothing pending to confirm."
         return "Nothing pending to cancel."
 
+    # ------------------------------------------------------------------ recap helpers
+    @staticmethod
+    def _safe(fn, default):
+        try:
+            return fn()
+        except Exception:  # noqa: BLE001 - one dead source must not kill the recap
+            return default
+
+    def _gather_indices(self, market):
+        levels = self._safe(market.index_levels, {})
+        return [{"symbol": s, "name": INDEX_NAMES.get(s, s),
+                 "level": d.get("level"), "pct": d.get("pct")}
+                for s, d in levels.items()]
+
+    def _select_movers(self, pct, config):
+        threshold = getattr(config, "stock_mover_threshold_pct", 4.0)
+        max_movers = getattr(config, "stock_max_movers", 5)
+        notable = [(s, p) for s, p in pct.items()
+                   if p is not None and abs(p) >= threshold]
+        notable.sort(key=lambda sp: abs(sp[1]), reverse=True)
+        return [{"symbol": s, "pct": p} for s, p in notable[:max_movers]]
+
+    def _gather_earnings(self, market, pool, today):
+        out = []
+        for sym in pool:
+            dates = self._safe(lambda s=sym: market.earnings_dates(s), [])
+            if today in dates:
+                out.append({"symbol": sym, "note": "reports earnings today"})
+        return out
+
+    @staticmethod
+    def _build_why(mover_syms, news_items, earnings_syms):
+        have_news = {getattr(i, "raw", {}).get("symbol") for i in news_items}
+        why = {}
+        for s in mover_syms:
+            if s in earnings_syms:
+                why[s] = "earnings report"
+            elif s in have_news:
+                why[s] = "recent company news (see below)"
+            else:
+                why[s] = "no clear catalyst (technical/sector)"
+        return why
+
     # ------------------------------------------------------------------ scheduled
-    def run_scheduled(self, svc):
-        # Phase 02 replaces this no-op with the real after-close recap pipeline
-        # (it MODIFIES this file — keep handle_message + the /add etc. helpers).
-        # Skeleton is a no-op.
-        return None
+    def run_scheduled(self, svc) -> None:
+        tz = getattr(svc.config, "stock_schedule_tz", "America/Vancouver")
+        today = self._today_fn(tz)
+        if not self._is_trading_day(today):
+            return  # holiday/weekend: send nothing, record nothing
+
+        market, news = self._resolve_sources(svc)
+        wl = self._wm(svc)
+        pool = self._safe(wl.get, [])
+        indices = self._gather_indices(market)
+
+        why: dict = {}
+        earnings: list = []
+        if pool:
+            mode = "personalized"
+            pct = self._safe(lambda: market.pct_changes(pool), {})
+            movers = self._select_movers(pct, svc.config)
+            mover_syms = [m["symbol"] for m in movers]
+            news_items: list = []
+            for sym in mover_syms:
+                news_items.extend(self._safe(lambda s=sym: news.company_news(s), []))
+            earnings = self._gather_earnings(market, pool, today)
+            why = self._build_why(mover_syms, news_items, {e["symbol"] for e in earnings})
+        else:
+            mode = "market"
+            movers = []
+            news_items = self._safe(news.market_news, [])
+
+        recap = RecapData(indices=indices, movers=movers, why=why,
+                          news=news_items, earnings=earnings)
+        if self._composer_factory is not None:
+            composer = self._composer_factory()
+        else:
+            composer = StockComposer(svc.llm, getattr(svc.config, "output_language", "en"))
+        html_text = composer.compose(recap)
+        svc.channel.send(html_text)
+        svc.store.record_run({"agent": "stock", "mode": mode, "chars": len(html_text)})
 
 
 def _format_result(result):
