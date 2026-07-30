@@ -35,7 +35,7 @@ class Config(BaseSettings):
     stock_peer_limit: int = 5
     stock_schedule_tz: str = "America/Vancouver"   # doc-only; real schedule in EventBridge
     image_agent: str = "stock"                     # which agent consumes photo messages
-    # NOTE: vision_model is added in Phase 03 (image support), NOT here.
+    vision_model: str = "google/gemini-2.5-flash"   # cheap vision-capable OpenRouter id
 
     @field_validator("llm_fallback_models", "enabled_agents", mode="before")
     @classmethod

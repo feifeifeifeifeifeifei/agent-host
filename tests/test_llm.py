@@ -50,3 +50,41 @@ def test_falls_back_after_model_exhausts_attempts():
                     client=fake, attempts=2, sleep=_no_sleep)
     assert llm.complete([{"role": "user", "content": "hi"}]) == "recovered"
     assert fake.chat.completions.calls == ["primary/m", "primary/m", "backup/m"]
+
+
+class _CaptureClient:
+    """Captures the exact create() kwargs of a single vision call."""
+    def __init__(self, text):
+        self.captured = {}
+        outer = self
+
+        class _Comp:
+            def create(self, model, messages, **kw):
+                outer.captured = {"model": model, "messages": messages, "kw": kw}
+                return _Resp(text)
+
+        self.chat = type("Chat", (), {"completions": _Comp()})()
+
+
+def test_complete_vision_sends_base64_data_uri_with_max_tokens():
+    fake = _CaptureClient('{"candidates": ["AAPL"]}')
+    llm = LLMClient(api_key="k", model="text/m", vision_model="vision/m",
+                    client=fake, sleep=_no_sleep)
+    out = llm.complete_vision(
+        [{"role": "system", "content": "extract tickers only"}],
+        b"\x89PNG\r\n\x1a\n", mime="image/png", max_tokens=128,
+    )
+    assert out == '{"candidates": ["AAPL"]}'
+    assert fake.captured["model"] == "vision/m"          # uses the vision model
+    assert fake.captured["kw"]["max_tokens"] == 128       # bounded output
+    content = fake.captured["messages"][-1]["content"]    # image is the last user turn
+    assert content[0]["type"] == "image_url"
+    assert content[0]["image_url"]["url"].startswith("data:image/png;base64,")
+    assert content[0]["image_url"]["url"] != "data:image/png;base64,"   # bytes encoded
+
+
+def test_complete_vision_falls_back_to_primary_model_when_unset():
+    fake = _CaptureClient("{}")
+    llm = LLMClient(api_key="k", model="text/m", client=fake, sleep=_no_sleep)
+    llm.complete_vision([{"role": "system", "content": "x"}], b"img")
+    assert fake.captured["model"] == "text/m"

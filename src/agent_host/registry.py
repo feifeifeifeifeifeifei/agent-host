@@ -21,7 +21,8 @@ def build_services(config: Config, dry_run: bool = False) -> Services:
         channel=TelegramChannel(config.telegram_bot_token, config.telegram_chat_id,
                                 dry_run=dry_run),
         llm=LLMClient(config.openrouter_api_key, config.llm_model,
-                      config.llm_fallback_models),
+                      config.llm_fallback_models,
+                      vision_model=config.vision_model),
         store=build_store(config),
         config=config,
     )
