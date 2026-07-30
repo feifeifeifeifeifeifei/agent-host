@@ -1,3 +1,4 @@
+from agent_host.agents.stock import universe as universe_module
 from agent_host.agents.stock.universe import Universe, load_universe
 
 NASDAQ = (
@@ -118,3 +119,43 @@ def test_load_universe_refreshes_when_stale():
 
     load_universe(store, ttl_days=7, fetch=fetch2)
     assert len(calls) == 1   # stale cache triggered a refresh
+
+
+def test_default_fetch_hits_both_nasdaq_trader_urls(monkeypatch):
+    calls = []
+
+    class FakeResponse:
+        def __init__(self, text):
+            self.text = text
+
+    def fake_get(url, timeout=15):
+        calls.append(url)
+        if "nasdaqlisted.txt" in url:
+            return FakeResponse(NASDAQ)
+        if "otherlisted.txt" in url:
+            return FakeResponse(OTHER)
+        raise AssertionError(f"unexpected url: {url}")
+
+    monkeypatch.setattr(universe_module.httpx, "get", fake_get)
+    nasdaq_text, other_text = universe_module._default_fetch()
+    assert nasdaq_text == NASDAQ
+    assert other_text == OTHER
+    assert any("nasdaqlisted.txt" in u for u in calls)
+    assert any("otherlisted.txt" in u for u in calls)
+    assert len(calls) == 2   # no real network call made
+
+
+def test_load_universe_with_no_fetch_uses_default_fetch(monkeypatch):
+    store = FakeStore()
+    calls = []
+
+    def fake_default_fetch():
+        calls.append(1)
+        return NASDAQ, OTHER
+
+    monkeypatch.setattr(universe_module, "_default_fetch", fake_default_fetch)
+    u = load_universe(store)   # no explicit fetch -> falls back to _default_fetch
+    assert u.is_listed("AAPL")
+    assert len(calls) == 1
+    blob = store.get_prefs("__universe__")
+    assert blob.get("fetched_at")   # cached for next call

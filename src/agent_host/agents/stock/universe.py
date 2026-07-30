@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
+import httpx
+
+NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
+OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
+
 # Curated non-equity symbols supported by StockAgent. NO CRYPTO is ever added
 # here — crypto pairs (BTC-USD, ETH-USD, ...) are rejected exactly like any
 # other non-member of the allowlist.
@@ -67,14 +72,19 @@ def _parse(text: str, symbol_col: str, types: dict) -> None:
         types[sym] = "etf" if parts[etf_i].strip() == "Y" else "equity"
 
 
+def _default_fetch() -> tuple[str, str]:
+    """Production fetcher: pulls the two NASDAQ Trader symbol directory files."""
+    nasdaq_text = httpx.get(NASDAQ_LISTED_URL, timeout=15).text
+    other_text = httpx.get(OTHER_LISTED_URL, timeout=15).text
+    return nasdaq_text, other_text
+
+
 def load_universe(store, *, ttl_days: int = 7, fetch=None) -> Universe:
     blob = store.get_prefs(_UNIVERSE_KEY)
     if blob and _fresh(blob.get("fetched_at"), ttl_days):
         return Universe.from_blob(blob)
     if fetch is None:
-        if blob:
-            return Universe.from_blob(blob)   # stale but usable; no fetcher available
-        raise RuntimeError("no cached universe and no fetch function provided")
+        fetch = _default_fetch
     nasdaq_text, other_text = fetch()
     uni = Universe.from_nasdaq_files(nasdaq_text, other_text)
     out = uni.to_blob()
