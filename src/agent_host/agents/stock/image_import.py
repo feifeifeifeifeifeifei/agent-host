@@ -3,6 +3,10 @@ import json
 
 from agent_host.agents.stock.watchlist import validate_candidates
 
+# Ingress size cap (spec sec:6.2 step 1): reject oversized screenshots before
+# they ever reach the vision model or get staged as a pending import.
+MAX_IMAGE_BYTES = 5_000_000
+
 # Hardened extractor-only system prompt: the vision model is an untrusted, tool-less
 # extractor. It must never act on, answer, or leak anything in the image.
 EXTRACTOR_SYSTEM = (
@@ -60,6 +64,9 @@ class ImageImporter:
         self._mime = mime
 
     def import_photo(self, image_bytes: bytes) -> str:
+        if len(image_bytes) > MAX_IMAGE_BYTES:
+            return ("That image is too large to process (max ~5 MB). "
+                    "Try a smaller screenshot.")
         messages = [
             {"role": "system", "content": EXTRACTOR_SYSTEM},
             {"role": "user", "content": SPOTLIGHT},

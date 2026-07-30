@@ -1,7 +1,11 @@
 import json
 from agent_host.agents.stock.universe import Universe
 from agent_host.agents.stock.watchlist import WatchlistManager
-from agent_host.agents.stock.image_import import ImageImporter, parse_candidates
+from agent_host.agents.stock.image_import import (
+    MAX_IMAGE_BYTES,
+    ImageImporter,
+    parse_candidates,
+)
 
 NASDAQ_LISTED = (
     "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"
@@ -100,6 +104,16 @@ def test_schema_lock_rejects_non_json_prose():
     assert parse_candidates("here are your tickers: AAPL, TSLA") == []
     imp, wl, store = _importer("here are your tickers: AAPL, TSLA")
     assert "No valid tickers" in imp.import_photo(b"img")
+
+
+def test_oversized_image_rejected_without_calling_vision_or_staging():
+    imp, wl, store = _importer(MALICIOUS)   # vision would return real tickers if called
+    oversized = b"\x89PNG" + b"\x00" * MAX_IMAGE_BYTES   # > MAX_IMAGE_BYTES
+    reply = imp.import_photo(oversized)
+    assert "too large" in reply.lower()
+    assert imp._llm.calls == []            # vision client never invoked
+    assert wl.get_pending() == []          # nothing staged
+    assert wl.get() == []
 
 
 def test_extractor_prompt_marks_input_untrusted_and_ticker_only():
