@@ -19,8 +19,7 @@ def test_stock_config_defaults(monkeypatch):
     assert cfg.stock_peer_limit == 5
     assert cfg.stock_schedule_tz == "America/Vancouver"
     assert cfg.image_agent == "stock"
-    # vision_model is a Phase 03 addition; it must NOT exist yet.
-    assert not hasattr(cfg, "vision_model")
+    # vision_model is added in Phase 03 (see tests/test_config.py for its defaults).
 
 
 def test_stock_config_env_override(monkeypatch):
