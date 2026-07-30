@@ -82,7 +82,7 @@ def validate_candidates(raw, universe, *, max_tickers: int) -> ValidationResult:
         if not sym:
             result.rejected.append((text, REASON_EMPTY))
             continue
-        if is_probable_crypto(sym):
+        if is_probable_crypto(sym) and not universe.is_listed(sym):
             result.rejected.append((sym, REASON_CRYPTO))
             continue
         if not shape_ok(sym):

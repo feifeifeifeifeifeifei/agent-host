@@ -237,6 +237,28 @@ def test_crypto_rejected_with_reason(payload):
     assert list(_reasons(r).values()) == [REASON_CRYPTO]
 
 
+def _uni_with_ltc_equity():
+    # LTC Properties Inc — a real listed equity that collides with the crypto
+    # base symbol "LTC" (Litecoin). Listed status must win over the crypto guard.
+    types = {"LTC": "equity"}
+    return Universe(symbols=frozenset(types), types=types)
+
+
+def test_crypto_shaped_symbol_that_is_listed_equity_is_accepted():
+    u = _uni_with_ltc_equity()
+    r = validate_candidates(["LTC"], u, max_tickers=50)
+    assert r.accepted == ["LTC"]
+    assert r.rejected == []
+
+
+def test_genuine_crypto_still_rejected_when_listed_collision_exists():
+    u = _uni_with_ltc_equity()
+    r = validate_candidates(["BTC-USD", "BTC", "ETHUSD"], u, max_tickers=50)
+    assert r.accepted == []
+    for sym in ["BTC-USD", "BTC", "ETHUSD"]:
+        assert _reasons(r)[sym] == REASON_CRYPTO
+
+
 def test_validation_result_defaults_empty():
     vr = ValidationResult()
     assert vr.accepted == [] and vr.rejected == []
