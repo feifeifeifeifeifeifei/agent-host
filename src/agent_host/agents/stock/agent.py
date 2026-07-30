@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 from agent_host.agents.base import Agent
 from agent_host.agents.stock.calendar import is_trading_day as _is_trading_day
 from agent_host.agents.stock.composer import RecapData, StockComposer
+from agent_host.agents.stock.image_import import ImageImporter
 from agent_host.agents.stock.universe import load_universe
 from agent_host.agents.stock.watchlist import WatchlistManager
 
@@ -75,6 +76,8 @@ class StockAgent(Agent):
 
     # ------------------------------------------------------------------ routing
     def handle_message(self, msg, svc):
+        if getattr(msg, "photo_file_ids", None):
+            return self._handle_photo(msg, svc)
         text = (msg.text or "").strip()
         if not text.startswith("/"):
             return None   # command-only agent; free text belongs to ChatAgent
@@ -91,9 +94,19 @@ class StockAgent(Agent):
             return self._cmd_reset(svc)
         if cmd == "/help":
             return HELP
-        if cmd in ("/confirm", "/cancel"):
-            return self._cmd_pending_stub(cmd)
+        if cmd == "/confirm":
+            return self._importer(svc).confirm()
+        if cmd == "/cancel":
+            return self._importer(svc).cancel()
         return "Unknown command. Try /help."
+
+    def _importer(self, svc):
+        return ImageImporter(svc.llm, self._wm(svc), self._get_universe(svc),
+                             max_tickers=getattr(svc.config, "stock_max_tickers", 50))
+
+    def _handle_photo(self, msg, svc):
+        image_bytes = svc.channel.download_file(msg.photo_file_ids[0])
+        return self._importer(svc).import_photo(image_bytes)
 
     # ------------------------------------------------------------------ commands
     def _cmd_tickers(self, svc):
@@ -120,12 +133,6 @@ class StockAgent(Agent):
     def _cmd_reset(self, svc):
         self._wm(svc).reset()
         return "<b>Watchlist cleared.</b> Tracking the market by default."
-
-    def _cmd_pending_stub(self, cmd):
-        # Phase 03 wires image-import confirmation to /confirm and /cancel.
-        if cmd == "/confirm":
-            return "Nothing pending to confirm."
-        return "Nothing pending to cancel."
 
     # ------------------------------------------------------------------ recap helpers
     @staticmethod

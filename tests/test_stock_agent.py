@@ -31,7 +31,7 @@ class FakeStore:
 
 def _svc(store):
     config = SimpleNamespace(telegram_chat_id="42", stock_max_tickers=50)
-    return SimpleNamespace(store=store, config=config)
+    return SimpleNamespace(store=store, config=config, llm=None, channel=None)
 
 
 def _agent():
