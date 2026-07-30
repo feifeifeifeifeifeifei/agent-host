@@ -99,7 +99,3 @@ def test_confirm_cancel_are_stubs():
 
 def test_free_text_not_handled():
     assert _agent().handle_message(_msg("hello there"), _svc(FakeStore())) is None
-
-
-def test_run_scheduled_is_noop_this_phase():
-    assert _agent().run_scheduled(_svc(FakeStore())) is None
