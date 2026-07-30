@@ -127,3 +127,85 @@ def test_earnings_dates_best_effort():
     })
     assert src.earnings_dates("AAPL") == [date(2026, 8, 5)]
     assert src.earnings_dates("MSFT") == []
+
+
+from agent_host.agents.stock.sources.finnhub_source import FinnhubSource
+
+
+class FakeResp:
+    def __init__(self, data, status=200):
+        self._d = data
+        self.status_code = status
+    def json(self):
+        return self._d
+
+
+class FakeHttp:
+    def __init__(self, resp_map):
+        self._map = resp_map            # url-fragment -> FakeResp
+        self.calls = []
+    def get(self, url, params=None):
+        self.calls.append((url, params))
+        for frag, resp in self._map.items():
+            if frag in url:
+                return resp
+        return FakeResp([], 404)
+
+
+def test_empty_key_disables_all_methods():
+    src = FinnhubSource("")            # no key -> disabled, no http needed
+    assert src.company_news("AAPL") == []
+    assert src.peers("AAPL") == []
+    assert src.market_news() == []
+    assert src.earnings_surprises("AAPL") == []
+    assert src.earnings_calendar("AAPL") == []
+
+
+def test_company_news_maps_to_digest_items_with_links():
+    http = FakeHttp({"/company-news": FakeResp([
+        {"headline": "Apple beats", "url": "https://x/1",
+         "summary": "Strong iPhone quarter.", "datetime": 1_800_000_000},
+    ])})
+    src = FinnhubSource("k", http=http, sleep=lambda _x: None)
+    items = src.company_news("AAPL")
+    assert len(items) == 1
+    assert items[0].title == "Apple beats"
+    assert items[0].url == "https://x/1"
+    assert items[0].summary == "Strong iPhone quarter."
+    assert items[0].raw["symbol"] == "AAPL"
+    assert items[0].published_at is not None
+
+
+def test_peers_and_market_news_and_surprises():
+    http = FakeHttp({
+        "/stock/peers": FakeResp(["AAPL", "MSFT", "GOOGL"]),
+        "/news": FakeResp([{"headline": "Markets rally", "url": "u", "datetime": 1}]),
+        "/stock/earnings": FakeResp([{"period": "2026-06-30", "surprisePercent": 3.1}]),
+    })
+    src = FinnhubSource("k", http=http, sleep=lambda _x: None)
+    assert src.peers("AAPL") == ["AAPL", "MSFT", "GOOGL"]
+    assert src.market_news()[0].title == "Markets rally"
+    assert src.earnings_surprises("AAPL")[0]["surprisePercent"] == 3.1
+
+
+def test_calendar_earnings_premium_403_falls_back_to_empty():
+    http = FakeHttp({"/calendar/earnings": FakeResp({"error": "premium"}, status=403)})
+    src = FinnhubSource("k", http=http, sleep=lambda _x: None)
+    assert src.earnings_calendar("AAPL") == []      # premium -> graceful []
+
+
+def test_rate_limit_spacing_and_cache():
+    http = FakeHttp({
+        "/company-news": FakeResp([]),
+        "/stock/peers": FakeResp([]),
+    })
+    slept = []
+    src = FinnhubSource("k", http=http, clock=lambda: 0.0,
+                        sleep=lambda s: slept.append(s), min_interval=1.0)
+    src.company_news("AAPL")            # 1st call: no wait
+    src.peers("AAPL")                   # 2nd call: must space >= 1s
+    assert slept == [pytest.approx(1.0)]
+    # per-run cache: repeating an identical request hits no new http call
+    before = len(http.calls)
+    src.company_news("AAPL")
+    assert len(http.calls) == before
