@@ -11,7 +11,15 @@ class Host:
         self._agents = {a.name: a for a in agents}
         self._services = services
         self._default = default_agent
-        self._commands = {cmd: a for a in agents for cmd in a.commands}
+        self._commands: dict[str, Agent] = {}
+        for a in agents:
+            for cmd in a.commands:
+                if cmd in self._commands:
+                    raise ValueError(
+                        f"command {cmd!r} is owned by both "
+                        f"{self._commands[cmd].name!r} and {a.name!r}"
+                    )
+                self._commands[cmd] = a
 
     @property
     def channel(self):
@@ -27,11 +35,19 @@ class Host:
         except Exception:  # noqa: BLE001 - a failing agent must not crash the host
             log.exception("agent %s run_scheduled failed", agent_name)
 
-    def _route(self, text: str) -> Agent:
+    def _unknown_command_hint(self, cmd: str) -> str:
+        available = ", ".join(sorted(self._commands)) or "(none)"
+        return (f"Unknown command {cmd}. "
+                f"Available commands: {available}. Try /help.")
+
+    def _route(self, msg) -> Agent:
+        text = msg.text or ""
         if text.startswith("/"):
-            cmd = text.split()[0]
-            if cmd in self._commands:
-                return self._commands[cmd]
+            return self._commands[text.split()[0]]        # membership pre-checked
+        if getattr(msg, "photo_file_ids", None):
+            image_agent = getattr(self._services.config, "image_agent", None)
+            if image_agent and image_agent in self._agents:
+                return self._agents[image_agent]
         return self._agents[self._default]
 
     def handle_message(self, update: dict) -> str | None:
@@ -42,7 +58,12 @@ class Host:
         if allowed is not None and str(msg.chat_id) != str(allowed):
             log.warning("dropping message from unauthorized chat_id %s", msg.chat_id)
             return None
-        agent = self._route(msg.text)
+        text = msg.text or ""
+        if text.startswith("/") and text.split()[0] not in self._commands:
+            hint = self._unknown_command_hint(text.split()[0])
+            self._services.channel.send(hint)
+            return hint
+        agent = self._route(msg)
         try:
             reply = agent.handle_message(msg, self._svc_for(agent))
         except Exception:  # noqa: BLE001 - isolate agent failures from the host
