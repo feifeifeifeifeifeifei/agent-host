@@ -32,7 +32,8 @@ def _agent_factories() -> dict:
     # lazy imports so Host tests don't require the concrete agents to exist yet
     from agent_host.agents.brief.agent import BriefAgent
     from agent_host.agents.chat.agent import ChatAgent
-    return {"brief": BriefAgent, "chat": ChatAgent}
+    from agent_host.agents.stock.agent import StockAgent
+    return {"brief": BriefAgent, "chat": ChatAgent, "stock": StockAgent}
 
 
 def build_agents(config: Config) -> list:
