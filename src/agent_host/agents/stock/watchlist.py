@@ -99,3 +99,73 @@ def validate_candidates(raw, universe, *, max_tickers: int) -> ValidationResult:
         seen.add(sym)
         result.accepted.append(sym)
     return result
+
+
+from datetime import datetime, timezone
+
+
+class WatchlistManager:
+    def __init__(self, store, chat_id, universe, *, max_tickers):
+        self._store = store
+        self._chat_id = str(chat_id)
+        self._universe = universe
+        self._max = max_tickers
+
+    def _prefs(self) -> dict:
+        return self._store.get_prefs(self._chat_id)
+
+    def _save(self, prefs) -> None:
+        self._store.set_prefs(self._chat_id, prefs)
+
+    def get(self) -> list:
+        return list(self._prefs().get("watchlist", {}).get("tickers", []))
+
+    def _set_tickers(self, tickers) -> None:
+        prefs = self._prefs()
+        prefs["watchlist"] = {
+            "tickers": tickers,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._save(prefs)
+
+    def add(self, symbols) -> ValidationResult:
+        existing = self.get()
+        result = validate_candidates(symbols, self._universe, max_tickers=self._max)
+        added = []
+        for sym in result.accepted:
+            if sym in existing or sym in added:
+                continue
+            if len(existing) + len(added) >= self._max:
+                result.rejected.append((sym, _reason_cap(self._max)))
+                continue
+            added.append(sym)
+        if added:
+            self._set_tickers(existing + added)
+        return ValidationResult(accepted=added, rejected=result.rejected)
+
+    def remove(self, symbols) -> list:
+        existing = self.get()
+        targets = {normalize_symbol(s) for s in symbols}
+        removed = [s for s in existing if s in targets]
+        if removed:
+            self._set_tickers([s for s in existing if s not in targets])
+        return removed
+
+    def reset(self) -> None:
+        self._set_tickers([])
+
+    def set_pending(self, cands) -> None:
+        prefs = self._prefs()
+        prefs["pending_import"] = {
+            "candidates": list(cands),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        self._save(prefs)
+
+    def get_pending(self) -> list:
+        return list(self._prefs().get("pending_import", {}).get("candidates", []))
+
+    def clear_pending(self) -> None:
+        prefs = self._prefs()
+        prefs.pop("pending_import", None)
+        self._save(prefs)
