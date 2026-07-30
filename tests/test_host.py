@@ -121,6 +121,17 @@ def test_photo_message_routes_to_image_agent():
     assert captured["photos"] == ["big"]                  # routed with the file_id
 
 
+def test_mixed_case_command_routes_to_owning_agent_not_unknown_hint():
+    class Stock(Agent):
+        name = "stock"; commands = ["/tickers"]
+        def handle_message(self, msg, svc): return "TICKERS OK"
+    svc = _svc()
+    host = Host([Stock()], svc, default_agent="stock")
+    reply = host.handle_message({"message": {"chat": {"id": 42}, "text": "/TICKERS"}})
+    assert reply == "TICKERS OK"
+    assert "Unknown command" not in (svc.channel.sent[-1]["text"] if svc.channel.sent else "")
+
+
 def test_duplicate_command_across_agents_raises():
     class A(Agent):
         name = "a"; commands = ["/dup"]

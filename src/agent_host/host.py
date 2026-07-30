@@ -43,7 +43,7 @@ class Host:
     def _route(self, msg) -> Agent:
         text = msg.text or ""
         if text.startswith("/"):
-            return self._commands[text.split()[0]]        # membership pre-checked
+            return self._commands[text.split()[0].lower()]  # membership pre-checked
         if getattr(msg, "photo_file_ids", None):
             image_agent = getattr(self._services.config, "image_agent", None)
             if image_agent and image_agent in self._agents:
@@ -59,7 +59,7 @@ class Host:
             log.warning("dropping message from unauthorized chat_id %s", msg.chat_id)
             return None
         text = msg.text or ""
-        if text.startswith("/") and text.split()[0] not in self._commands:
+        if text.startswith("/") and text.split()[0].lower() not in self._commands:
             hint = self._unknown_command_hint(text.split()[0])
             self._services.channel.send(hint)
             return hint
