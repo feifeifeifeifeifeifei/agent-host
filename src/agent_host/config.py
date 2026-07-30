@@ -27,6 +27,16 @@ class Config(BaseSettings):
     default_agent: str = "chat"
     output_language: str = "zh"
 
+    # --- StockAgent (Phase 01) ---
+    finnhub_api_key: str = ""
+    stock_max_tickers: int = 50
+    stock_mover_threshold_pct: float = 4.0
+    stock_max_movers: int = 5
+    stock_peer_limit: int = 5
+    stock_schedule_tz: str = "America/Vancouver"   # doc-only; real schedule in EventBridge
+    image_agent: str = "stock"                     # which agent consumes photo messages
+    # NOTE: vision_model is added in Phase 03 (image support), NOT here.
+
     @field_validator("llm_fallback_models", "enabled_agents", mode="before")
     @classmethod
     def _split_csv(cls, v):
