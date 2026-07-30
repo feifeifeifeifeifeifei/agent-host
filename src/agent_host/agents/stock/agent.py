@@ -27,8 +27,8 @@ HELP = (
     "/remove AAPL — remove symbols\n"
     "/reset — clear watchlist (back to tracking the market)\n"
     "/help — this message\n"
-    "Screenshot import (brokerage / TradingView) is coming soon: send a photo, "
-    "review the detected tickers, then /confirm."
+    "Screenshot import: send a photo of your brokerage / TradingView holdings; "
+    "I'll show the detected tickers — then /confirm to add or /cancel to discard."
 )
 
 

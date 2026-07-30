@@ -91,6 +91,13 @@ def test_help_lists_commands():
     assert "/add" in reply and "/tickers" in reply
 
 
+def test_help_screenshot_import_is_available_not_coming_soon():
+    reply = _agent().handle_message(_msg("/help"), _svc(FakeStore()))
+    assert "coming soon" not in reply.lower()
+    assert "screenshot import" in reply.lower()
+    assert "/confirm" in reply and "/cancel" in reply
+
+
 def test_confirm_cancel_are_stubs():
     agent = _agent()
     assert "nothing" in agent.handle_message(_msg("/confirm"), _svc(FakeStore())).lower()
