@@ -6,6 +6,7 @@ class InboundMessage(BaseModel):
     chat_id: str
     text: str
     message_id: int | None = None
+    photo_file_ids: list[str] = Field(default_factory=list)
     raw: dict = Field(default_factory=dict)
 
 
