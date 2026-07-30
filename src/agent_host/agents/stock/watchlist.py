@@ -59,3 +59,43 @@ def is_probable_crypto(s: str) -> bool:
         return True
     m = _CRYPTO_PAIR.match(t)
     return bool(m and m.group(1) in _CRYPTO_BASES)
+
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ValidationResult:
+    accepted: list = field(default_factory=list)   # list[str]
+    rejected: list = field(default_factory=list)    # list[tuple[str, str]]
+
+
+def validate_candidates(raw, universe, *, max_tickers: int) -> ValidationResult:
+    """Deterministic gate: normalize -> crypto-reason -> shape -> allowlist ->
+    silent dedupe -> count cap. This is the ONLY authority for pool membership;
+    nothing an LLM emits is trusted past this function."""
+    result = ValidationResult()
+    seen: set[str] = set()
+    for original in raw:
+        text = original if isinstance(original, str) else str(original)
+        sym = normalize_symbol(text)
+        if not sym:
+            result.rejected.append((text, REASON_EMPTY))
+            continue
+        if is_probable_crypto(sym):
+            result.rejected.append((sym, REASON_CRYPTO))
+            continue
+        if not shape_ok(sym):
+            result.rejected.append((sym, REASON_SHAPE))
+            continue
+        if not universe.is_listed(sym):
+            result.rejected.append((sym, REASON_UNKNOWN))
+            continue
+        if sym in seen:
+            continue   # silent dedupe (not a rejection)
+        if len(result.accepted) >= max_tickers:
+            result.rejected.append((sym, _reason_cap(max_tickers)))
+            continue
+        seen.add(sym)
+        result.accepted.append(sym)
+    return result
