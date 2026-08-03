@@ -23,9 +23,12 @@ class YFinanceSource(MarketDataSource):
         session = self._session or crequests.Session(impersonate="chrome")
         return lambda sym: yf.Ticker(sym, session=session)
 
-    def _ticker(self, symbol: str):
+    def _ensure_factory(self):
         if self._factory is None:
             self._factory = self._build_factory()
+
+    def _ticker(self, symbol: str):
+        self._ensure_factory()
         return self._factory(symbol)
 
     def _map(self, fn, items):
@@ -38,18 +41,29 @@ class YFinanceSource(MarketDataSource):
         with ThreadPoolExecutor(max_workers=min(self._max_workers, len(items))) as ex:
             return list(ex.map(fn, items))
 
-    def _history(self, symbol: str, period: str = "2d"):
-        if symbol in self._hist_cache:
-            return self._hist_cache[symbol]
+    def _fetch_history(self, symbol: str, period: str = "2d"):
         for attempt in range(self._attempts):
             try:
-                hist = self._ticker(symbol).history(period=period)
-                self._hist_cache[symbol] = hist
-                return hist
+                return self._ticker(symbol).history(period=period)
             except Exception:  # noqa: BLE001 - retry w/ backoff, then give up
                 if attempt + 1 < self._attempts:
                     self._sleep(0.5 * (2 ** attempt))
         return None
+
+    def _prefetch(self, symbols) -> None:
+        # dict.fromkeys dedupes while preserving order, so a symbol listed twice
+        # (or passed again after caching) is fetched at most once.
+        todo = [s for s in dict.fromkeys(symbols) if s not in self._hist_cache]
+        if not todo:
+            return
+        self._ensure_factory()   # build session on the main thread, pre-race
+        for sym, hist in self._map(lambda s: (s, self._fetch_history(s)), todo):
+            self._hist_cache[sym] = hist
+
+    def _history(self, symbol: str, period: str = "2d"):
+        if symbol not in self._hist_cache:
+            self._hist_cache[symbol] = self._fetch_history(symbol, period)
+        return self._hist_cache[symbol]
 
     @staticmethod
     def _clean_closes(hist) -> list[float]:
@@ -62,6 +76,7 @@ class YFinanceSource(MarketDataSource):
 
     # --- MarketDataSource ------------------------------------------------
     def pct_changes(self, symbols: list[str]) -> dict[str, float]:
+        self._prefetch(symbols)
         out: dict[str, float] = {}
         for sym in symbols:
             closes = self._clean_closes(self._history(sym))
@@ -71,6 +86,7 @@ class YFinanceSource(MarketDataSource):
         return out
 
     def index_levels(self) -> dict[str, dict]:
+        self._prefetch(INDEX_SYMBOLS)
         out: dict[str, dict] = {}
         for sym in INDEX_SYMBOLS:
             closes = self._clean_closes(self._history(sym))

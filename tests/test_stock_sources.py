@@ -69,6 +69,7 @@ class FakeTicker:
 
 
 def _src(mapping, **kw):
+    kw.setdefault("max_workers", 1)
     return YFinanceSource(ticker_factory=lambda s: mapping[s], sleep=lambda _x: None, **kw)
 
 
@@ -142,6 +143,32 @@ def test_earnings_dates_best_effort():
     })
     assert src.earnings_dates("AAPL") == [date(2026, 8, 5)]
     assert src.earnings_dates("MSFT") == []
+
+
+def test_prefetch_fetches_each_symbol_once_and_dedupes():
+    calls = []
+
+    class CountingTicker:
+        def __init__(self, sym): self._sym = sym
+        def history(self, period="2d"):
+            calls.append(self._sym)
+            return FakeHist([100.0, 101.0])
+
+    src = YFinanceSource(ticker_factory=CountingTicker, sleep=lambda _x: None,
+                         max_workers=1)
+    src._prefetch(["AAPL", "MSFT", "AAPL"])   # duplicate must not refetch
+    src._prefetch(["AAPL"])                     # already cached -> no fetch
+    assert sorted(calls) == ["AAPL", "MSFT"]
+
+
+def test_pct_changes_correct_under_real_threads():
+    mapping = {f"S{i}": FakeTicker(closes=[100.0, 100.0 + i]) for i in range(20)}
+    src = YFinanceSource(ticker_factory=lambda s: mapping[s], sleep=lambda _x: None,
+                         max_workers=8)
+    out = src.pct_changes(list(mapping))
+    assert out["S1"] == pytest.approx(1.0)
+    assert out["S10"] == pytest.approx(10.0)
+    assert out["S0"] == pytest.approx(0.0)   # 0% change is kept (has 2 closes)
 
 
 from agent_host.agents.stock.sources.finnhub_source import FinnhubSource
