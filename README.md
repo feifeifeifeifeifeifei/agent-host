@@ -49,7 +49,7 @@ flowchart LR
 
 ### StockAgent — daily US-market recap (showcase)
 
-`StockAgent` is a **command-only** agent (no free-form chat) plugged into the same host that pushes one Telegram digest per US trading day, after market close. The recap itself is straightforward — the interview-centerpiece feature is *how the watchlist gets populated safely*.
+`StockAgent` is a **command-only** agent (no free-form chat) plugged into the same host that pushes one Telegram digest per US trading day, after market close. The recap itself is straightforward — the centerpiece is *how the watchlist gets populated safely*.
 
 **The showcase: input validation mapped to the OWASP Top 10 for LLM Applications (2025).** Tickers can enter the watchlist through three channels — a text `/add`, a screenshot upload, and a `/confirm` on a pending import — and all three route through the *same* deterministic gate. The north star: **the LLM (text or vision) is an untrusted, tool-less *extractor*, never an authority.** Nothing it emits is acted on until it survives a **deterministic allowlist check** against a ground-truth ticker universe — NASDAQ Trader symbol files, refreshed weekly, plus a small curated set of indices/futures. Rather than trying to enumerate every bad input — an unbounded, losing game against prompt injection, jailbreaks, homoglyphs, zero-width Unicode, formula/XSS payloads, and PII leakage — the gate enumerates the only things that are *valid*: real, currently-listed tickers (~10⁴–10⁵ items). Anything outside that small, closed, knowable set is discarded, turning an unbounded adversarial-NLP problem into an O(1) set-membership test.
 
