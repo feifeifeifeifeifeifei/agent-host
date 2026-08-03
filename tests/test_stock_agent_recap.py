@@ -12,6 +12,8 @@ class FakeMarket:
         self._indices = indices or {}
         self._earn = earnings or {}
         self._boom_indices = boom_indices
+        self.bulk_calls = 0
+        self.single_calls = 0
     def pct_changes(self, symbols):
         return {s: self._pct[s] for s in symbols if s in self._pct}
     def index_levels(self):
@@ -19,7 +21,13 @@ class FakeMarket:
             raise RuntimeError("yfinance down")
         return self._indices
     def sector(self, s): return None
-    def earnings_dates(self, s): return self._earn.get(s, [])
+    def earnings_dates(self, s):
+        self.single_calls += 1
+        return self._earn.get(s, [])
+
+    def earnings_dates_bulk(self, symbols):
+        self.bulk_calls += 1
+        return {s: self.earnings_dates(s) for s in symbols}
 
 
 class FakeNews:
@@ -150,6 +158,19 @@ def test_earnings_today_flows_into_recap_and_why():
     agent.run_scheduled(svc)
     assert cc.recap.earnings == [{"symbol": "AAPL", "note": "reports earnings today"}]
     assert cc.recap.why["AAPL"] == "earnings report"
+
+
+def test_agent_gathers_earnings_via_bulk_call():
+    store = MemStore()
+    svc = _svc(store)
+    market = FakeMarket(pct={"AAPL": 5.0},
+                        indices={"^GSPC": {"level": 5050.0, "pct": 1.0}},
+                        earnings={"AAPL": [date(2026, 7, 29)]})
+    agent = _agent(market=market,
+                   watchlist_factory=lambda: FakeWatchlist(["AAPL"]),
+                   composer_factory=lambda: CapturingComposer())
+    agent.run_scheduled(svc)
+    assert market.bulk_calls == 1        # earnings gathered in one bulk call
 
 
 def test_dead_source_does_not_kill_the_recap():

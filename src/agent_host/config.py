@@ -33,6 +33,7 @@ class Config(BaseSettings):
     stock_mover_threshold_pct: float = 4.0
     stock_max_movers: int = 5
     stock_peer_limit: int = 5
+    stock_fetch_workers: int = 8   # max concurrent Yahoo fetches (rate-limit cap)
     stock_schedule_tz: str = "America/Vancouver"   # doc-only; real schedule in EventBridge
     image_agent: str = "stock"                     # which agent consumes photo messages
     vision_model: str = "google/gemini-2.5-flash"   # cheap vision-capable OpenRouter id

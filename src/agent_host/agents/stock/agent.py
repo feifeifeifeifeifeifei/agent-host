@@ -67,7 +67,8 @@ class StockAgent(Agent):
         market = self._market
         if market is None:
             from agent_host.agents.stock.sources.yfinance_source import YFinanceSource
-            market = YFinanceSource()
+            market = YFinanceSource(
+                max_workers=getattr(svc.config, "stock_fetch_workers", 8))
         news = self._news
         if news is None:
             from agent_host.agents.stock.sources.finnhub_source import FinnhubSource
@@ -157,12 +158,9 @@ class StockAgent(Agent):
         return [{"symbol": s, "pct": p} for s, p in notable[:max_movers]]
 
     def _gather_earnings(self, market, pool, today):
-        out = []
-        for sym in pool:
-            dates = self._safe(lambda s=sym: market.earnings_dates(s), [])
-            if today in dates:
-                out.append({"symbol": sym, "note": "reports earnings today"})
-        return out
+        by_sym = self._safe(lambda: market.earnings_dates_bulk(pool), {})
+        return [{"symbol": s, "note": "reports earnings today"}
+                for s in pool if today in by_sym.get(s, [])]
 
     @staticmethod
     def _build_why(mover_syms, news_items, earnings_syms):
