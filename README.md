@@ -4,8 +4,16 @@
 
 A small, pluggable **host** for running Telegram-connected AI agents, running **serverless on AWS**. The host owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a pluggable storage backend, and message routing — while individual **agents** plug in to do the work. Three ship out of the box: `BriefAgent` (a scheduled daily news brief), `ChatAgent` (free-form conversation with per-chat memory), and `StockAgent` (a command-only, daily after-close US-market recap with a screenshot-driven watchlist import). The *same* codebase runs two ways: a local long-polling process for development, and an AWS Lambda function in production.
 
+## Branches
+
+| Branch | What it is |
+|---|---|
+| `main` | The deployed host + `BriefAgent` (daily news brief) + `ChatAgent`. |
+| `feat/stock-agent` | Adds **`StockAgent`** — an after-close US-market recap with an OWASP-mapped input-validation guardrail and screenshot-driven watchlist import (**this branch**). |
+
 ## Contents
 
+- [Branches](#branches)
 - [Architecture](#architecture)
   - [BriefAgent and ChatAgent host architecture](#briefagent-and-chatagent-host-architecture)
   - [StockAgent — daily US-market recap (showcase)](#stockagent--daily-us-market-recap-showcase)

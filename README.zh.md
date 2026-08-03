@@ -4,8 +4,16 @@
 
 `agent-host` 是一个小巧、可插拔的**宿主(host)**,用来运行接入 Telegram 的 AI agent,**以 serverless 方式跑在 AWS 上**。宿主持有共享的底层设施——一个 Telegram 通道、一个基于 OpenRouter 的 LLM 客户端、一个可插拔的存储后端(本地 SQLite,云上 DynamoDB),以及消息路由——各个 **agent** 插进来干实际的活。开箱自带三个:`BriefAgent`(按计划推送每日新闻简报)、`ChatAgent`(带每会话记忆的自由对话),以及 `StockAgent`(仅命令式的、每个美股交易日收盘后的复盘简报,支持截图导入自选股)。**同一套代码**有两种跑法:本地 long-polling 进程(开发),AWS Lambda 函数(生产)。
 
+## 分支说明
+
+| 分支 | 是干嘛的 |
+|---|---|
+| `main` | 已部署的宿主 + `BriefAgent`(每日新闻简报)+ `ChatAgent`。 |
+| `feat/stock-agent` | 加入 **`StockAgent`** —— 美股收盘后复盘 + 映射 OWASP 的输入校验护栏 + 截图导入自选股(**当前这个分支**)。 |
+
 ## 目录
 
+- [分支说明](#分支说明)
 - [架构总览](#架构总览)
   - [BriefAgent 与 ChatAgent 的宿主架构](#briefagent-与-chatagent-的宿主架构)
   - [StockAgent — 美股收盘后每日复盘(护栏亮点)](#stockagent--美股收盘后每日复盘护栏亮点)
