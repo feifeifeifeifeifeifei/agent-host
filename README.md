@@ -2,7 +2,7 @@
 
 > 🇨🇳 中文说明见 [README.zh.md](README.zh.md).
 
-A small, pluggable **host** for running Telegram-connected AI agents, running **serverless on AWS**. The host owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a pluggable storage backend, and message routing — while individual **agents** plug in to do the work. Three ship out of the box: `BriefAgent` (a scheduled daily news brief), `ChatAgent` (free-form conversation with per-chat memory), and `StockAgent` (a command-only, daily after-close US-market recap with a screenshot-driven watchlist import). The *same* codebase runs two ways: a local long-polling process for development, and an AWS Lambda function in production.
+A small, pluggable **host** for running Telegram-connected AI agents, running **serverless on AWS**. The host owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a pluggable storage backend, and message routing — while individual **agents** plug in to do the work. Three ship out of the box: `BriefAgent` (a minimal **reference/scaffold** agent — it uses a placeholder news source to exercise the scheduled-push pipeline, kept as the simplest possible agent and **not run on a schedule in the live deployment**), `ChatAgent` (free-form conversation with per-chat memory), and `StockAgent` (the flagship — a command-only, daily after-close US-market recap with screenshot-driven watchlist import). `ChatAgent` and `StockAgent` do the real work; `BriefAgent` is the template for the pluggable-agent pattern. The *same* codebase runs two ways: a local long-polling process for development, and an AWS Lambda function in production.
 
 ## Branches
 
@@ -31,7 +31,7 @@ A small, pluggable **host** for running Telegram-connected AI agents, running **
 One Lambda function, two entry paths, one table:
 
 - A **Telegram webhook** (delivered to a **Lambda Function URL**) drives live chat.
-- A daily **EventBridge schedule** fires the *same* Lambda to compose and push the news brief.
+- A daily **EventBridge schedule** fires the *same* Lambda to run a scheduled agent — in production that's **StockAgent's** after-close recap (`BriefAgent` is not scheduled in the live deployment).
 - **DynamoDB** holds conversation memory and news-dedup state, so the stateless function has somewhere durable to remember.
 
 ```mermaid
@@ -42,7 +42,7 @@ flowchart LR
     end
     TG -->|HTTPS POST + secret-token header| FU[Lambda Function URL<br/>auth: NONE]
     FU --> L[AWS Lambda: agent-host<br/>Python 3.12]
-    EB -->|const JSON: mode=scheduled, agent=brief| L
+    EB -->|const JSON: mode=scheduled, agent=stock| L
     L <-->|GetItem / PutItem| D[(DynamoDB<br/>single-table, pk only)]
     L -->|prompt| OR[OpenRouter LLM]
     L -->|sendMessage| OUT[Telegram → user]
@@ -53,7 +53,7 @@ flowchart LR
 - **Serverless (Lambda).** A personal bot is idle almost all the time; pay-per-invocation means ~$0/month within the free tier and nothing to keep running or patch.
 - **Function URL, not API Gateway.** The only caller is Telegram's server, so a Lambda Function URL is the minimal public HTTPS endpoint. It's `auth: NONE` (Telegram can't sign AWS SigV4 requests), so the endpoint is guarded **in code**: a **fail-closed secret-token check** (`hmac.compare_digest`; an unset secret returns `403`, never open) plus a **sender allow-list** (only the owner's `chat_id` is served).
 - **DynamoDB, single table.** Lambda's filesystem is ephemeral, so state must live externally. The code only ever does `GetItem` / `PutItem` against a single partition key (namespaces are baked into the key, e.g. `brief#memory#42`) — so the IAM policy grants exactly those two actions on exactly that one table. **Least privilege by construction.**
-- **Scheduling lives outside the code.** Lambda is passive and can't wake itself, so "run the brief at 4pm" lives in an EventBridge rule, not an env var. Each agent that needs a schedule gets its own rule, so different agents can run at different times with **zero code change**.
+- **Scheduling lives outside the code.** Lambda is passive and can't wake itself, so "run the stock recap at 4pm" lives in an EventBridge schedule, not an env var. Each agent that needs a schedule gets its own, so different agents can run at different times (or be turned off) with **zero code change** — that's exactly how `BriefAgent`'s schedule is disabled while `StockAgent`'s stays on.
 
 ### StockAgent — daily US-market recap (showcase)
 
@@ -89,7 +89,7 @@ flowchart LR
 | Packaging | `manylinux` / x86_64 wheels built for the Lambda runtime; flat zip |
 | Testing | `pytest` + `moto` (mock DynamoDB); fakes / dry-run; env-gated live e2e |
 | Observability | Amazon CloudWatch Logs |
-| Market data (StockAgent) | yfinance (`curl_cffi` session + retry/backoff) + pandas/numpy (native wheels) |
+| Market data (StockAgent) | yfinance (`curl_cffi` session + retry/backoff, **bounded-concurrent fetch** via a thread pool — `STOCK_FETCH_WORKERS`) + pandas/numpy + lxml (native wheels) |
 | Company & market news (StockAgent) | Finnhub free tier (60 calls/min; empty key ⇒ graceful degrade to yfinance) |
 | Ticker universe / ground truth (StockAgent) | NASDAQ Trader symbol files (`nasdaqlisted.txt` / `otherlisted.txt`), weekly refresh |
 | Screenshot ingestion (StockAgent) | OpenRouter vision-capable model (`VISION_MODEL`), tool-less extractor |
@@ -140,6 +140,13 @@ your real Telegram chat — it only runs if you export `RUN_E2E=1` with a fully-
 
 ### BriefAgent and ChatAgent usage
 
+> **Heads-up on `BriefAgent`:** it's a **reference/scaffold** agent, not a working news aggregator.
+> It uses a placeholder source (`agents/brief/sources/placeholder.py`) that returns fixed sample
+> items, so `/brief` shows placeholder content — and once those items are deduped as "seen", every
+> later run just says *"No new items today."* It exists to demonstrate the scheduled-push pipeline
+> and the pluggable-agent pattern; its production schedule is **disabled**. Swap in a real RSS/API
+> source to make it functional.
+
 Try the agents locally:
 
 ```bash
@@ -152,8 +159,8 @@ python -m agent_host.entrypoints.local_run serve
 
 For `serve` to receive anything, open Telegram and send your bot a `/start` (or any message) —
 Telegram only delivers messages to a bot after a user has messaged it at least once. Send it
-`/brief` to get the news brief on demand, or just chat with it normally (routed to `ChatAgent` by
-default).
+`/brief` to run the (placeholder) brief on demand, or just chat with it normally (routed to
+`ChatAgent` by default).
 
 ### StockAgent usage
 
@@ -161,7 +168,7 @@ default).
 `IMAGE_AGENT=stock`). Optionally set `FINNHUB_API_KEY` (recommended — better news links + peer
 propagation; an empty key gracefully degrades to yfinance-only) and the `VISION_MODEL` /
 `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` /
-`STOCK_SCHEDULE_TZ` tuning knobs — all documented in `.env.example`.
+`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` tuning knobs — all documented in `.env.example`.
 
 Run it once, right now, from the command line:
 
@@ -193,8 +200,7 @@ nothing on market holidays or weekends** (checked against the XNYS trading calen
 individual names.
 
 **Schedule:** 4pm `America/Vancouver`, Monday–Friday, via its own EventBridge schedule (payload
-`{"mode": "scheduled", "agent": "stock"}`) — the same clock time as the brief, sent as an
-independent message.
+`{"mode": "scheduled", "agent": "stock"}`).
 
 ## How to add a new agent
 
@@ -219,7 +225,7 @@ To add your own:
    string — this is the key used everywhere the agent is looked up.
 2. **Implement whichever entry points apply:**
    - `run_scheduled(self, svc)` — called for scheduled/cron-triggered work (e.g. what
-     `BriefAgent` does once a day). `svc` is a `Services` bundle giving you `svc.channel` (send
+     `StockAgent` does after market close each trading day). `svc` is a `Services` bundle giving you `svc.channel` (send
      messages), `svc.llm` (call the configured LLM), `svc.store` (a `Store`, already namespaced to
      your agent's `name` so your keys can't collide with another agent's), and `svc.config`.
    - `handle_message(self, msg, svc)` — called when this agent is routed an inbound Telegram
@@ -256,16 +262,19 @@ no AWS or network access required.
 ## Deploying to AWS
 
 Local `serve` (long-polling) is fine for development but isn't meant to run unattended forever.
-For a real always-on deployment — Telegram webhook via a Lambda Function URL, plus a daily
-EventBridge schedule for the brief, backed by DynamoDB instead of the local SQLite file — follow
-the full click-by-click guide in **[`infra/aws-runbook.md`](infra/aws-runbook.md)**. It covers
+For a real always-on deployment — Telegram webhook via a Lambda Function URL, plus EventBridge
+schedules for scheduled agents (StockAgent's after-close recap in production), backed by DynamoDB
+instead of the local SQLite file — follow the full click-by-click guide in
+**[`infra/aws-runbook.md`](infra/aws-runbook.md)**. It covers
 prerequisites, the DynamoDB table, the IAM role, packaging and uploading the Lambda zip, wiring up
 the webhook, the EventBridge cron schedule, end-to-end verification, and cost/teardown.
 
-`StockAgent` is built and fully tested locally; it isn't deployed to production yet. Taking it
-live follows the **same pattern** as the brief: register it (already done in code) and make sure
-`stock` is in `ENABLED_AGENTS`, repackage (yfinance pulls in native `pandas`/`numpy`/`curl_cffi`
-wheels — see the Tech stack table above and validate the Lambda zip size early), add its own
-EventBridge schedule targeting the same Lambda with payload `{"mode": "scheduled", "agent":
-"stock"}`, and set its env vars (`FINNHUB_API_KEY`, `VISION_MODEL`, any `STOCK_*` overrides) in
-the Lambda console — see the runbook.
+`StockAgent` is **deployed and live in production** — it pushes the after-close US-market recap at
+4pm `America/Vancouver`, Monday–Friday, on the same `agent-host` Lambda (1024 MB / 120s; yfinance
++ pandas/numpy/curl_cffi/lxml packaged as native `manylinux` x86_64 wheels). Deploying any
+scheduled agent follows the **same pattern**: register it (see [How to add a new
+agent](#how-to-add-a-new-agent)), add its name to `ENABLED_AGENTS`, repackage the Lambda zip
+(validate its size early — the native wheels are the bulk), add its own EventBridge schedule
+targeting the Lambda with payload `{"mode": "scheduled", "agent": "<name>"}`, and set its env vars
+(`FINNHUB_API_KEY`, `VISION_MODEL`, any `STOCK_*` overrides) in the Lambda console — see the
+runbook.
