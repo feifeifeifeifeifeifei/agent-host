@@ -72,6 +72,21 @@ def _src(mapping, **kw):
     return YFinanceSource(ticker_factory=lambda s: mapping[s], sleep=lambda _x: None, **kw)
 
 
+def test_map_runs_sync_when_single_worker():
+    src = YFinanceSource(ticker_factory=lambda s: None, max_workers=1)
+    assert src._map(lambda x: x * 2, [1, 2, 3]) == [2, 4, 6]
+
+
+def test_map_empty_returns_empty():
+    src = YFinanceSource(ticker_factory=lambda s: None, max_workers=8)
+    assert src._map(lambda x: x * 2, []) == []
+
+
+def test_map_threaded_preserves_order_and_values():
+    src = YFinanceSource(ticker_factory=lambda s: None, max_workers=8)
+    assert src._map(lambda x: x * x, list(range(20))) == [x * x for x in range(20)]
+
+
 def test_pct_changes_computes_day_pct_and_omits_missing():
     src = _src({
         "AAPL": FakeTicker(closes=[100.0, 104.0]),   # +4.00%

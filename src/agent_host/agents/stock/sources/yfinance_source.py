@@ -7,11 +7,13 @@ INDEX_SYMBOLS = ("^GSPC", "^IXIC", "^DJI", "^SOX", "^TNX")
 
 
 class YFinanceSource(MarketDataSource):
-    def __init__(self, session=None, ticker_factory=None, attempts=3, sleep=time.sleep):
+    def __init__(self, session=None, ticker_factory=None, attempts=3, sleep=time.sleep,
+                 max_workers=8):
         self._session = session
         self._factory = ticker_factory
         self._attempts = attempts
         self._sleep = sleep
+        self._max_workers = max_workers
         self._hist_cache: dict[str, object] = {}   # per-run cache
 
     # --- ticker plumbing -------------------------------------------------
@@ -25,6 +27,16 @@ class YFinanceSource(MarketDataSource):
         if self._factory is None:
             self._factory = self._build_factory()
         return self._factory(symbol)
+
+    def _map(self, fn, items):
+        items = list(items)
+        if not items:
+            return []
+        if self._max_workers <= 1 or len(items) == 1:
+            return [fn(x) for x in items]
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(self._max_workers, len(items))) as ex:
+            return list(ex.map(fn, items))
 
     def _history(self, symbol: str, period: str = "2d"):
         if symbol in self._hist_cache:
