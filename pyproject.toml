@@ -10,6 +10,7 @@ dependencies = [
   "boto3>=1.34",
   "yfinance>=0.2.40",
   "curl_cffi>=0.7",
+  "lxml>=5",              # yfinance get_earnings_dates() parses with lxml; absent => earnings silently []
   "holidays>=0.50",
 ]
 
