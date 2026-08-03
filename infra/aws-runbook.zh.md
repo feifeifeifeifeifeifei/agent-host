@@ -20,6 +20,7 @@
 6. [添加 Function URL(webhook 端点)](#6-添加-function-urlwebhook-端点)
 7. [注册 Telegram webhook](#7-注册-telegram-webhook)
 8. [创建每日定时任务(EventBridge)](#8-创建每日定时任务eventbridge)
+8b. [StockAgent — 部署增量](#8b-stockagent--部署增量)
 9. [端到端验证](#9-端到端验证)
 10. [成本与拆除](#10-成本与拆除)
 
@@ -400,6 +401,79 @@ cat response.json
 ```
 
 **确认成功:** `response.json` 应包含 `{"statusCode": 200, "body": "ok"}`,且你的 Telegram 应在几秒内收到简报消息。
+
+---
+
+## 8b. StockAgent — 部署增量
+
+第 1–8 节搭起的是基础宿主(`BriefAgent` + `ChatAgent`)。加入 `StockAgent` —— 以及并发拉取优化 ——
+会改动其中三步。在此基础上叠加下面这些。
+
+**§4 打包 —— 更重的原生依赖 + 两个坑。** `StockAgent` 会带进 `yfinance`、`pandas`、`numpy`、
+`curl_cffi`,以及 **`lxml`**(解析财报日期)。这些全是原生 x86_64 wheel,所以第 4 节那四个
+`manylinux2014_x86_64` flag 现在是**必须的**,不再可选。两个生产里踩过的坑:
+
+- **别装进 `-t build/`。** `build/` 会和 setuptools 自己的 build 目录**撞名**,被塞进 `lib/` 下的
+  垃圾。装进一个**别的**目录,比如 `-t pkg/`,从那儿打包。
+- **zip 约 49 MB**(基础版约 25–30 MB)。仍在 Lambda 50 MB 直传上限内 —— 但前提是**删掉运行时
+  自带的包**,所以第 5 节里"可选瘦身"在这里变成**必须**:打包前删 `boto3`、`botocore`、
+  `s3transfer`(保留 `pandas`/`numpy`/`curl_cffi`/`lxml`)。
+
+```bash
+rm -rf pkg function.zip
+pip install . \
+  --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 \
+  --only-binary=:all: -t pkg/
+rm -rf pkg/boto3 pkg/botocore pkg/s3transfer            # 运行时自带;省约 20 MB
+find pkg -type d -name __pycache__ -prune -exec rm -rf {} +
+cd pkg && zip -rq ../function.zip . && cd ..
+unzip -l function.zip | grep -E 'lxml/|pandas/|curl_cffi/'   # 检查:原生依赖在
+ls -lh function.zip                                          # 检查:< 50 MB
+```
+
+> **只改了代码**(比如这次的并发优化)、不想重建所有 wheel 时:把上一份可用的 `function.zip` 解压
+> 到一个 staging 目录,**只**用当前的 `src/agent_host` 替换里面的 `agent_host/`,单独加任何**新**
+> 依赖,再重新打包。这样能保住已验证的依赖版本,而不是拉到更新的版本:
+> ```bash
+> mkdir stage && cd stage && unzip -q ../function.zip
+> rm -rf agent_host && cp -r ../src/agent_host agent_host
+> pip install 'lxml>=5' --platform manylinux2014_x86_64 --implementation cp \
+>   --python-version 3.12 --abi cp312 --only-binary=:all: --no-deps -t .   # 仅在需要加 lxml 时
+> find . -type d -name __pycache__ -prune -exec rm -rf {} +
+> zip -rq ../function.zip . && cd ..
+> ```
+
+**§5 Lambda 配置 —— 更大内存和更长超时,外加 stock 环境变量。** 复盘要加载 pandas/numpy/lxml 并
+发拉取,所以基础的 **256 MB / 60 s 在真实自选股下会 OOM 或超时**。设 **内存 1024 MB**、**超时
+2 分钟(120 s)**。在第 5 节的环境变量表里加上:
+
+| 键 | 值 |
+|---|---|
+| `ENABLED_AGENTS` | `brief, chat, stock`(加上 `stock`) |
+| `FINNHUB_API_KEY` | 你的 Finnhub 免费层 key(留空 ⇒ 优雅降级为只用 yfinance 新闻) |
+| `VISION_MODEL` | `google/gemini-2.5-flash`(或留空用代码默认) |
+| `IMAGE_AGENT` | `stock`(把收到的照片路由给 StockAgent 的截图导入) |
+| `STOCK_FETCH_WORKERS` | `8`(可选 —— 并发拉取上限;调小可降低峰值内存) |
+
+其余 `STOCK_*` 参数(`STOCK_MAX_TICKERS`、`STOCK_MOVER_THRESHOLD_PCT`、`STOCK_SCHEDULE_TZ` 等)
+都有代码默认值,想覆盖再设。从 CLI 更新一个已存在的函数:
+
+```bash
+aws lambda update-function-code --function-name agent-host \
+  --zip-file fileb://function.zip --region <region>
+aws lambda update-function-configuration --function-name agent-host \
+  --memory-size 1024 --timeout 120 --region <region>
+```
+
+**§8 定时 —— 多一条定时任务,而且简报被关掉了。** `StockAgent` 有它**自己**的 EventBridge 定时
+任务,和简报那条并存,建法和第 8 节完全一样,只是:
+
+- **名称** `agent-host-stock-recap`;**cron** `0 16 ? * MON-FRI *`;**时区** `America/Vancouver`;
+  **目标** `agent-host`;**输入** `{"mode": "scheduled", "agent": "stock"}`。只在工作日(交易日;
+  市场假日的门在代码里)。
+- 基础的 **`agent-host-daily-brief` 定时任务已被置为 DISABLED。** `BriefAgent` 用的是占位新闻源
+  (见 README),所以把它每天的推送关掉,免得天天来一条 "No new items today."。等接上真实新闻源
+  再重新启用。
 
 ---
 
