@@ -18,10 +18,27 @@ class YFinanceSource(MarketDataSource):
 
     # --- ticker plumbing -------------------------------------------------
     def _build_factory(self):
-        from curl_cffi import requests as crequests   # lazy; native ext
         import yfinance as yf
-        session = self._session or crequests.Session(impersonate="chrome")
-        return lambda sym: yf.Ticker(sym, session=session)
+        if self._session is not None:
+            # Caller supplied a session and thereby opted into sharing it.
+            session = self._session
+            return lambda sym: yf.Ticker(sym, session=session)
+        # No injected session: give each worker thread its OWN impersonated
+        # curl_cffi session. curl_cffi sessions are not safe to share across
+        # threads doing concurrent requests, and _map fans _fetch_history /
+        # earnings_dates out across up to max_workers threads.
+        import threading
+        from curl_cffi import requests as crequests   # lazy; native ext
+        local = threading.local()
+
+        def factory(sym):
+            session = getattr(local, "session", None)
+            if session is None:
+                session = crequests.Session(impersonate="chrome")
+                local.session = session
+            return yf.Ticker(sym, session=session)
+
+        return factory
 
     def _ensure_factory(self):
         if self._factory is None:
