@@ -145,6 +145,35 @@ def test_earnings_dates_best_effort():
     assert src.earnings_dates("MSFT") == []
 
 
+def test_earnings_dates_bulk_maps_all_symbols():
+    src = _src({
+        "AAPL": FakeTicker(earnings=[datetime(2026, 8, 5, 16, 0)]),
+        "MSFT": FakeTicker(earnings=None),
+    })
+    out = src.earnings_dates_bulk(["AAPL", "MSFT"])
+    assert out["AAPL"] == [date(2026, 8, 5)]
+    assert out["MSFT"] == []
+
+
+def test_earnings_dates_bulk_survives_dead_symbol():
+    src = _src({
+        "AAPL": FakeTicker(earnings=[datetime(2026, 8, 5, 16, 0)]),
+        "BAD": FakeTicker(boom=True),      # get_earnings_dates path raises upstream
+    })
+    out = src.earnings_dates_bulk(["AAPL", "BAD"])
+    assert out["AAPL"] == [date(2026, 8, 5)]
+    assert out["BAD"] == []               # swallowed -> [], batch not crashed
+
+
+def test_base_earnings_dates_bulk_default_loops():
+    class M(MarketDataSource):
+        def pct_changes(self, symbols): return {}
+        def index_levels(self): return {}
+        def sector(self, symbol): return None
+        def earnings_dates(self, symbol): return [date(2026, 1, 1)] if symbol == "X" else []
+    assert M().earnings_dates_bulk(["X", "Y"]) == {"X": [date(2026, 1, 1)], "Y": []}
+
+
 def test_prefetch_fetches_each_symbol_once_and_dedupes():
     calls = []
 

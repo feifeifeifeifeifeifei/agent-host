@@ -23,6 +23,11 @@ class MarketDataSource(ABC):
     def earnings_dates(self, symbol: str) -> list[date]:
         """Best-effort forward/known earnings dates; [] when unavailable."""
 
+    def earnings_dates_bulk(self, symbols: list[str]) -> dict[str, list[date]]:
+        """Map symbols -> earnings dates. Default loops earnings_dates; concrete
+        sources may override with a batched/concurrent implementation."""
+        return {s: self.earnings_dates(s) for s in symbols}
+
 
 class NewsSource(ABC):
     """Headline/link side of the free data stack (Finnhub-backed by default)."""

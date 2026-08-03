@@ -119,3 +119,9 @@ class YFinanceSource(MarketDataSource):
             return [ts.date() if hasattr(ts, "date") else ts for ts in list(df.index)]
         except Exception:  # noqa: BLE001
             return []
+
+    def earnings_dates_bulk(self, symbols: list[str]) -> dict[str, list[date]]:
+        symbols = list(symbols)
+        if symbols:
+            self._ensure_factory()   # build session on the main thread, pre-race
+        return dict(self._map(lambda s: (s, self.earnings_dates(s)), symbols))
