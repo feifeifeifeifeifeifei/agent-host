@@ -19,3 +19,6 @@ build/
 
 # Personal notes (personal reading only, not for the repo)
 docs/my-notes/
+
+# Superpowers specs/plans — keep local, not in the repo
+docs/superpowers/
