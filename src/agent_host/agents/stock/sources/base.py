@@ -25,7 +25,11 @@ class MarketDataSource(ABC):
 
     def earnings_dates_bulk(self, symbols: list[str]) -> dict[str, list[date]]:
         """Map symbols -> earnings dates. Default loops earnings_dates; concrete
-        sources may override with a batched/concurrent implementation."""
+        sources may override with a batched/concurrent implementation.
+
+        earnings_dates must be best-effort (never raise): this default has no
+        per-symbol guard, so one raising symbol would drop earnings for the
+        whole batch. The agent additionally wraps the call in its own _safe."""
         return {s: self.earnings_dates(s) for s in symbols}
 
 

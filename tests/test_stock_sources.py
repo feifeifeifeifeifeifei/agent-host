@@ -63,6 +63,8 @@ class FakeTicker:
             raise RuntimeError("info blocked")
         return self._info
     def get_earnings_dates(self):
+        if self._boom:
+            raise RuntimeError("earnings blocked")
         if self._earnings is None:
             return None
         return FakeEarnings(self._earnings)

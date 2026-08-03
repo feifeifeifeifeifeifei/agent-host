@@ -20,7 +20,9 @@ class YFinanceSource(MarketDataSource):
     def _build_factory(self):
         import yfinance as yf
         if self._session is not None:
-            # Caller supplied a session and thereby opted into sharing it.
+            # Caller supplied a session and thereby opted into sharing it across
+            # all workers. Such a session must be thread-safe, or the caller
+            # should use max_workers=1 — we honor their choice rather than wrap it.
             session = self._session
             return lambda sym: yf.Ticker(sym, session=session)
         # No injected session: give each worker thread its OWN impersonated
@@ -79,6 +81,8 @@ class YFinanceSource(MarketDataSource):
 
     def _history(self, symbol: str, period: str = "2d"):
         if symbol not in self._hist_cache:
+            # A failed fetch (None) is cached too, on purpose: within one run we
+            # don't want to re-run the exhausted retry/backoff for a dead symbol.
             self._hist_cache[symbol] = self._fetch_history(symbol, period)
         return self._hist_cache[symbol]
 
