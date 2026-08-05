@@ -6,6 +6,7 @@ from agent_host.agents.base import Agent
 from agent_host.agents.stock.calendar import is_trading_day as _is_trading_day
 from agent_host.agents.stock.composer import RecapData, StockComposer
 from agent_host.agents.stock.image_import import ImageImporter
+from agent_host.agents.stock.leveraged import catalyst_symbol
 from agent_host.agents.stock.universe import load_universe
 from agent_host.agents.stock.watchlist import WatchlistManager
 
@@ -158,19 +159,29 @@ class StockAgent(Agent):
         return [{"symbol": s, "pct": p} for s, p in notable[:max_movers]]
 
     def _gather_earnings(self, market, pool, today):
-        by_sym = self._safe(lambda: market.earnings_dates_bulk(pool), {})
-        return [{"symbol": s, "note": "reports earnings today"}
-                for s in pool if today in by_sym.get(s, [])]
+        cats = {s: catalyst_symbol(s) for s in pool}
+        targets = list(dict.fromkeys(cats.values()))          # deduped catalyst symbols
+        by_cat = self._safe(lambda: market.earnings_dates_bulk(targets), {})
+        out = []
+        for s in pool:
+            cat = cats[s]
+            if today in by_cat.get(cat, []):
+                note = ("reports earnings today" if cat == s
+                        else f"reports earnings today (via {cat})")
+                out.append({"symbol": s, "note": note})
+        return out
 
     @staticmethod
-    def _build_why(mover_syms, news_items, earnings_syms):
-        have_news = {getattr(i, "raw", {}).get("symbol") for i in news_items}
+    def _build_why(mover_syms, mover_has_news, earnings_syms):
         why = {}
         for s in mover_syms:
+            cat = catalyst_symbol(s)
+            lev = cat != s
             if s in earnings_syms:
-                why[s] = "earnings report"
-            elif s in have_news:
-                why[s] = "recent company news (see below)"
+                why[s] = f"underlying {cat} reports earnings" if lev else "earnings report"
+            elif mover_has_news.get(s):
+                why[s] = (f"recent {cat} news (see below)" if lev
+                          else "recent company news (see below)")
             else:
                 why[s] = "no clear catalyst (technical/sector)"
         return why
@@ -195,10 +206,20 @@ class StockAgent(Agent):
             movers = self._select_movers(pct, svc.config)
             mover_syms = [m["symbol"] for m in movers]
             news_items: list = []
+            mover_has_news: dict = {}
+            seen_news: set = set()
             for sym in mover_syms:
-                news_items.extend(self._safe(lambda s=sym: news.company_news(s), []))
+                cat = catalyst_symbol(sym)
+                items = self._safe(lambda c=cat: news.company_news(c), [])
+                mover_has_news[sym] = bool(items)
+                for it in items:
+                    key = getattr(it, "url", None) or getattr(it, "title", "")
+                    if key in seen_news:
+                        continue
+                    seen_news.add(key)
+                    news_items.append(it)
             earnings = self._gather_earnings(market, pool, today)
-            why = self._build_why(mover_syms, news_items, {e["symbol"] for e in earnings})
+            why = self._build_why(mover_syms, mover_has_news, {e["symbol"] for e in earnings})
         else:
             mode = "market"
             movers = []

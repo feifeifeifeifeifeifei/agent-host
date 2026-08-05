@@ -188,6 +188,61 @@ def test_dead_source_does_not_kill_the_recap():
     assert store.runs[-1]["mode"] == "personalized"
 
 
+def test_leveraged_mover_why_and_news_come_from_underlying():
+    store = MemStore()
+    svc = _svc(store)
+    cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"PLTU": 6.0},                     # 2x PLTR, a mover
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={"PLTR": [DigestItem(source="finnhub",
+                                                   title="Palantir wins contract",
+                                                   url="https://x/pltr")]}),
+        watchlist_factory=lambda: FakeWatchlist(["PLTU"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    assert cc.recap.why["PLTU"] == "recent PLTR news (see below)"
+    assert any(getattr(n, "url", "") == "https://x/pltr" for n in cc.recap.news)
+
+
+def test_leveraged_mover_earnings_come_from_underlying():
+    store = MemStore()
+    svc = _svc(store)
+    cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"PLTU": 6.0},
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}},
+                          earnings={"PLTR": [date(2026, 7, 29)]}),   # underlying reports today
+        watchlist_factory=lambda: FakeWatchlist(["PLTU"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    assert cc.recap.earnings == [{"symbol": "PLTU",
+                                  "note": "reports earnings today (via PLTR)"}]
+    assert cc.recap.why["PLTU"] == "underlying PLTR reports earnings"
+
+
+def test_two_leveraged_etfs_same_underlying_dedupe_news():
+    store = MemStore()
+    svc = _svc(store)
+    cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"TSLL": 6.0, "TSLR": 7.0},          # both 2x TSLA
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={"TSLA": [DigestItem(source="finnhub",
+                                                   title="Tesla delivers",
+                                                   url="https://x/tsla")]}),
+        watchlist_factory=lambda: FakeWatchlist(["TSLL", "TSLR"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    tsla_items = [n for n in cc.recap.news if getattr(n, "url", "") == "https://x/tsla"]
+    assert len(tsla_items) == 1                                     # shown once, not twice
+    assert cc.recap.why["TSLL"] == "recent TSLA news (see below)"
+    assert cc.recap.why["TSLR"] == "recent TSLA news (see below)"
+
+
 def test_agent_static_attrs():
     a = StockAgent()
     assert a.name == "stock"
