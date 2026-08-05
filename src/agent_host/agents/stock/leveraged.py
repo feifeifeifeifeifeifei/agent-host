@@ -5,7 +5,7 @@
 # covers single-stock products (TSLL -> TSLA), never index/sector ones (TQQQ,
 # SOXL, UPRO), which have no single underlying stock. Extend it with the tickers
 # you actually hold.
-LEVERAGED_UNDERLYING = {
+LEVERAGED_UNDERLYING: dict[str, str] = {
     "PLTU": "PLTR",
     "TSLL": "TSLA", "TSLR": "TSLA", "TSLT": "TSLA",
     "NVDL": "NVDA", "NVDU": "NVDA", "NVDX": "NVDA",

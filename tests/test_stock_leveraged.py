@@ -12,6 +12,7 @@ def test_catalyst_symbol_maps_leveraged_to_underlying():
 def test_catalyst_symbol_passthrough_for_unmapped():
     assert catalyst_symbol("AAPL") == "AAPL"     # plain equity
     assert catalyst_symbol("TQQQ") == "TQQQ"     # index leveraged ETF: no single underlying
+    assert catalyst_symbol("") == ""             # total: empty in, empty out (never raises)
 
 
 def test_is_leveraged():
