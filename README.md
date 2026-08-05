@@ -199,6 +199,15 @@ nothing on market holidays or weekends** (checked against the XNYS trading calen
 `holidays` package). An empty watchlist defaults to a market-wide recap instead of tracking 500
 individual names.
 
+> **Single-stock leveraged ETFs:** if a mover is a single-stock leveraged ETF
+> (e.g. `PLTU` = 2× `PLTR`), its "why" and news are drawn from the **underlying**
+> stock (`PLTU +12%` → *"recent PLTR news"*), while the ETF itself stays the
+> tracked position (its own leveraged %-change is what you see). The ETF→underlying
+> map (`agents/stock/leveraged.py`) is a small **illustrative** set — the author
+> doesn't trade leveraged ETFs, so it demonstrates the pattern rather than being
+> exhaustive; extend it with the tickers you hold. Index/sector leveraged ETFs
+> (`TQQQ`, `SOXL`) have no single underlying and are tracked as-is.
+
 **Schedule:** 4pm `America/Vancouver`, Monday–Friday, via its own EventBridge schedule (payload
 `{"mode": "scheduled", "agent": "stock"}`).
 
