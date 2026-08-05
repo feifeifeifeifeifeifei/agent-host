@@ -150,7 +150,7 @@ python -m agent_host.entrypoints.local_run serve
 
 ### StockAgent 用法
 
-`StockAgent` 在 `.env.example` 里默认就是开启的(`ENABLED_AGENTS=brief, chat, stock`、`IMAGE_AGENT=stock`)。可以再设置 `FINNHUB_API_KEY`(推荐——更好的新闻链接 + 同业股票传播;留空会优雅降级为只用 yfinance)以及 `VISION_MODEL` / `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` / `STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` 这些调优参数——都写在 `.env.example` 里。
+`StockAgent` 在 `.env.example` 里默认就是开启的(`ENABLED_AGENTS=brief, chat, stock`、`IMAGE_AGENT=stock`)。可以再设置 `FINNHUB_API_KEY`(推荐——更好的新闻链接 + 同业股票传播;留空会优雅降级为只用 yfinance)以及 `VISION_MODEL` / `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` / `STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` 这些调优参数——都写在 `.env.example` 里。
 
 立刻从命令行运行一次:
 

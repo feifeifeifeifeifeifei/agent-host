@@ -168,7 +168,7 @@ Telegram only delivers messages to a bot after a user has messaged it at least o
 `IMAGE_AGENT=stock`). Optionally set `FINNHUB_API_KEY` (recommended — better news links + peer
 propagation; an empty key gracefully degrades to yfinance-only) and the `VISION_MODEL` /
 `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` /
-`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` tuning knobs — all documented in `.env.example`.
+`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` tuning knobs — all documented in `.env.example`.
 
 Run it once, right now, from the command line:
 
