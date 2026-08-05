@@ -138,7 +138,7 @@ def test_default_market_mode_when_pool_empty():
     )
     agent.run_scheduled(svc)
     assert cc.recap.movers == []
-    assert len(cc.recap.news) == 1
+    assert len(cc.recap.market_news) == 1
     assert cc.recap.indices[0]["symbol"] == "^GSPC"
     assert store.runs[-1]["mode"] == "market"
 
@@ -157,7 +157,8 @@ def test_earnings_today_flows_into_recap_and_why():
     )
     agent.run_scheduled(svc)
     assert cc.recap.earnings == [{"symbol": "AAPL", "note": "reports earnings today"}]
-    assert cc.recap.why["AAPL"] == "earnings report"
+    aapl = next(m for m in cc.recap.movers if m["symbol"] == "AAPL")
+    assert aapl["cause"] == "earnings report"
 
 
 def test_agent_gathers_earnings_via_bulk_call():
@@ -202,8 +203,9 @@ def test_leveraged_mover_why_and_news_come_from_underlying():
         composer_factory=lambda: cc,
     )
     agent.run_scheduled(svc)
-    assert cc.recap.why["PLTU"] == "recent PLTR news (see below)"
-    assert any(getattr(n, "url", "") == "https://x/pltr" for n in cc.recap.news)
+    pltu = next(m for m in cc.recap.movers if m["symbol"] == "PLTU")
+    assert pltu["cause"] == 'PLTR news: "Palantir wins contract"'
+    assert any(getattr(n, "url", "") == "https://x/pltr" for n in pltu["headlines"])
 
 
 def test_leveraged_mover_earnings_come_from_underlying():
@@ -220,10 +222,11 @@ def test_leveraged_mover_earnings_come_from_underlying():
     agent.run_scheduled(svc)
     assert cc.recap.earnings == [{"symbol": "PLTU",
                                   "note": "reports earnings today (via PLTR)"}]
-    assert cc.recap.why["PLTU"] == "underlying PLTR reports earnings"
+    pltu = next(m for m in cc.recap.movers if m["symbol"] == "PLTU")
+    assert pltu["cause"] == "underlying PLTR reports earnings"
 
 
-def test_two_leveraged_etfs_same_underlying_dedupe_news():
+def test_two_leveraged_etfs_same_underlying_each_get_its_news():
     store = MemStore()
     svc = _svc(store)
     cc = CapturingComposer()
@@ -237,10 +240,60 @@ def test_two_leveraged_etfs_same_underlying_dedupe_news():
         composer_factory=lambda: cc,
     )
     agent.run_scheduled(svc)
-    tsla_items = [n for n in cc.recap.news if getattr(n, "url", "") == "https://x/tsla"]
-    assert len(tsla_items) == 1                                     # shown once, not twice
-    assert cc.recap.why["TSLL"] == "recent TSLA news (see below)"
-    assert cc.recap.why["TSLR"] == "recent TSLA news (see below)"
+    by = {m["symbol"]: m for m in cc.recap.movers}
+    assert by["TSLL"]["cause"] == 'TSLA news: "Tesla delivers"'
+    assert by["TSLR"]["cause"] == 'TSLA news: "Tesla delivers"'
+    assert by["TSLL"]["headlines"][0].url == "https://x/tsla"
+    assert by["TSLR"]["headlines"][0].url == "https://x/tsla"
+
+
+def test_mover_with_no_news_reads_no_clear_catalyst():
+    store = MemStore(); svc = _svc(store); cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"MP": 8.3},                      # a mover, but…
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={}),                              # …no news, no earnings
+        watchlist_factory=lambda: FakeWatchlist(["MP"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    mp = next(m for m in cc.recap.movers if m["symbol"] == "MP")
+    assert mp["cause"] == "no clear catalyst (likely sector/technical)"
+    assert mp["headlines"] == []
+
+
+def test_mover_with_news_cause_is_its_own_top_headline():
+    store = MemStore(); svc = _svc(store); cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"MRVL": 12.8},
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={"MRVL": [DigestItem(source="finnhub",
+                                                   title="US bars China optical procurement",
+                                                   url="https://x/mrvl")]}),
+        watchlist_factory=lambda: FakeWatchlist(["MRVL"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    mrvl = next(m for m in cc.recap.movers if m["symbol"] == "MRVL")
+    assert mrvl["cause"] == 'news: "US bars China optical procurement"'
+    assert mrvl["headlines"][0].url == "https://x/mrvl"
+
+
+def test_movers_news_is_not_cross_wired():
+    store = MemStore(); svc = _svc(store); cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"MRVL": 12.8, "MU": 7.6},
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={"MU": [DigestItem(source="finnhub", title="AI memory demand",
+                                                 url="https://x/mu")]}),   # only MU has news
+        watchlist_factory=lambda: FakeWatchlist(["MRVL", "MU"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    by = {m["symbol"]: m for m in cc.recap.movers}
+    assert by["MU"]["cause"] == 'news: "AI memory demand"'
+    assert by["MRVL"]["cause"] == "no clear catalyst (likely sector/technical)"   # not MU's
+    assert by["MRVL"]["headlines"] == []
 
 
 def test_agent_static_attrs():

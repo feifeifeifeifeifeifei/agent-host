@@ -173,20 +173,18 @@ class StockAgent(Agent):
                 out.append({"symbol": s, "note": note})
         return out
 
+    _MOVER_HEADLINES = 3
+
     @staticmethod
-    def _build_why(mover_syms, mover_has_news, earnings_syms):
-        why = {}
-        for s in mover_syms:
-            cat = catalyst_symbol(s)
-            lev = cat != s
-            if s in earnings_syms:
-                why[s] = f"underlying {cat} reports earnings" if lev else "earnings report"
-            elif mover_has_news.get(s):
-                why[s] = (f"recent {cat} news (see below)" if lev
-                          else "recent company news (see below)")
-            else:
-                why[s] = "no clear catalyst (technical/sector)"
-        return why
+    def _mover_cause(sym, earnings_syms, headlines):
+        cat = catalyst_symbol(sym)
+        lev = cat != sym
+        if sym in earnings_syms:
+            return f"underlying {cat} reports earnings" if lev else "earnings report"
+        if headlines:
+            title = getattr(headlines[0], "title", "") or "recent company news"
+            return f'{cat} news: "{title}"' if lev else f'news: "{title}"'
+        return "no clear catalyst (likely sector/technical)"
 
     # ------------------------------------------------------------------ scheduled
     def run_scheduled(self, svc) -> None:
@@ -200,35 +198,26 @@ class StockAgent(Agent):
         pool = self._safe(wl.get, [])
         indices = self._gather_indices(market)
 
-        why: dict = {}
         earnings: list = []
+        market_news: list = []
         if pool:
             mode = "personalized"
             pct = self._safe(lambda: market.pct_changes(pool), {})
             movers = self._select_movers(pct, svc.config)
-            mover_syms = [m["symbol"] for m in movers]
-            news_items: list = []
-            mover_has_news: dict = {}
-            seen_news: set = set()
-            for sym in mover_syms:
-                cat = catalyst_symbol(sym)
-                items = self._safe(lambda c=cat: news.company_news(c), [])
-                mover_has_news[sym] = bool(items)
-                for it in items:
-                    key = getattr(it, "url", None) or getattr(it, "title", "")
-                    if key in seen_news:
-                        continue
-                    seen_news.add(key)
-                    news_items.append(it)
             earnings = self._gather_earnings(market, pool, today)
-            why = self._build_why(mover_syms, mover_has_news, {e["symbol"] for e in earnings})
+            earnings_syms = {e["symbol"] for e in earnings}
+            for m in movers:
+                cat = catalyst_symbol(m["symbol"])
+                items = self._safe(lambda c=cat: news.company_news(c), [])
+                m["headlines"] = items[:self._MOVER_HEADLINES]
+                m["cause"] = self._mover_cause(m["symbol"], earnings_syms, items)
         else:
             mode = "market"
             movers = []
-            news_items = self._safe(news.market_news, [])
+            market_news = self._safe(news.market_news, [])
 
-        recap = RecapData(indices=indices, movers=movers, why=why,
-                          news=news_items, earnings=earnings)
+        recap = RecapData(indices=indices, movers=movers,
+                          earnings=earnings, market_news=market_news)
         if self._composer_factory is not None:
             composer = self._composer_factory()
         else:
