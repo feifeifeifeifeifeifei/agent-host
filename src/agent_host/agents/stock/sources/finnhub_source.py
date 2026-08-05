@@ -9,7 +9,7 @@ BASE = "https://finnhub.io/api/v1"
 
 class FinnhubSource(NewsSource):
     def __init__(self, api_key: str, http=None, *, clock=time.monotonic,
-                 sleep=time.sleep, min_interval=1.0, now=None):
+                 sleep=time.sleep, min_interval=1.0, now=None, lookback_days: int = 2):
         self._api_key = api_key or ""
         self._clock = clock
         self._sleep = sleep
@@ -17,6 +17,7 @@ class FinnhubSource(NewsSource):
         self._last: float | None = None
         self._cache: dict[tuple, object] = {}
         self._now = now or (lambda: datetime.now(timezone.utc))
+        self._lookback_days = lookback_days
         self._http = http
         if self._http is None and self._api_key:
             import httpx
@@ -59,7 +60,7 @@ class FinnhubSource(NewsSource):
 
     def company_news(self, symbol: str) -> list[DigestItem]:
         to = self._now().date()
-        frm = to - timedelta(days=7)
+        frm = to - timedelta(days=self._lookback_days)
         resp = self._get("/company-news",
                          {"symbol": symbol, "from": frm.isoformat(), "to": to.isoformat()})
         if not self._ok(resp):

@@ -249,6 +249,24 @@ def test_company_news_maps_to_digest_items_with_links():
     assert items[0].published_at is not None
 
 
+def test_company_news_window_uses_lookback_days():
+    http = FakeHttp({"/company-news": FakeResp([])})
+    # fixed clock so the date math is deterministic
+    from datetime import datetime, timezone
+    now = lambda: datetime(2026, 8, 4, tzinfo=timezone.utc)
+    src = FinnhubSource("k", http=http, sleep=lambda _x: None, now=now, lookback_days=2)
+    src.company_news("AAPL")
+    _, params = http.calls[-1]
+    assert params["from"] == "2026-08-02"      # 4th minus 2 days
+    assert params["to"] == "2026-08-04"
+
+
+def test_company_news_lookback_defaults_to_2():
+    import inspect
+    from agent_host.agents.stock.sources.finnhub_source import FinnhubSource as F
+    assert inspect.signature(F.__init__).parameters["lookback_days"].default == 2
+
+
 def test_peers_and_market_news_and_surprises():
     http = FakeHttp({
         "/stock/peers": FakeResp(["AAPL", "MSFT", "GOOGL"]),

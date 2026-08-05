@@ -73,7 +73,9 @@ class StockAgent(Agent):
         news = self._news
         if news is None:
             from agent_host.agents.stock.sources.finnhub_source import FinnhubSource
-            news = FinnhubSource(getattr(svc.config, "finnhub_api_key", ""))
+            news = FinnhubSource(
+                getattr(svc.config, "finnhub_api_key", ""),
+                lookback_days=getattr(svc.config, "stock_news_lookback_days", 2))
         return market, news
 
     # ------------------------------------------------------------------ routing
