@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import holidays
 
@@ -13,3 +13,12 @@ def is_trading_day(d: date) -> bool:
         return False
     xnys = holidays.financial_holidays("XNYS", years=d.year)
     return d not in xnys
+
+
+def prior_trading_day(d: date) -> date:
+    """The most recent XNYS session strictly before `d` (walks back over
+    weekends and market holidays)."""
+    p = d - timedelta(days=1)
+    while not is_trading_day(p):
+        p -= timedelta(days=1)
+    return p
