@@ -6,10 +6,15 @@
 
 ## 分支说明
 
-| 分支 | 是干嘛的 |
+`main` 就是完整的宿主,线上部署的也是它。**三个 agent 都在这儿,通过 registry 插入、用 `ENABLED_AGENTS` 开关**——这才是"可插拔 agent"的本意,而不是每个 agent 一条分支:
+
+| Agent | 是干嘛的 |
 |---|---|
-| `main` | 已部署的宿主 + `BriefAgent`(每日新闻简报)+ `ChatAgent`。 |
-| `feat/stock-agent` | 加入 **`StockAgent`** —— 美股收盘后复盘 + 映射 OWASP 的输入校验护栏 + 截图导入自选股(**当前这个分支**)。 |
+| `BriefAgent` | 参考/骨架 agent(占位源;线上未定时运行)——加新 agent 的最小模板。 |
+| `ChatAgent` | 带每会话记忆的自由对话。 |
+| **`StockAgent`** | 旗舰 —— 美股收盘后复盘 + 映射 OWASP 的输入校验护栏 + 截图导入自选股。 |
+
+(`StockAgent` 曾在 `feat/stock-agent` 上开发,现已合入 `main`。)
 
 ## 目录
 

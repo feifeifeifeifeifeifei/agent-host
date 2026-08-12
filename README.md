@@ -6,10 +6,15 @@ A small, pluggable **host** for running Telegram-connected AI agents, running **
 
 ## Branches
 
-| Branch | What it is |
+`main` is the complete host, and it's what's deployed on Lambda. **All three agents live here and plug into the same host via the registry, toggled by `ENABLED_AGENTS`** — this *is* the pluggable-agent design, rather than a branch per agent:
+
+| Agent | What it is |
 |---|---|
-| `main` | The deployed host + `BriefAgent` (daily news brief) + `ChatAgent`. |
-| `feat/stock-agent` | Adds **`StockAgent`** — an after-close US-market recap with an OWASP-mapped input-validation guardrail and screenshot-driven watchlist import (**this branch**). |
+| `BriefAgent` | A reference/scaffold agent (placeholder source; not scheduled in the live deployment) — the minimal template for adding an agent. |
+| `ChatAgent` | Free-form conversation with per-chat memory. |
+| **`StockAgent`** | The flagship — an after-close US-market recap with an OWASP-mapped input-validation guardrail and screenshot-driven watchlist import. |
+
+(`StockAgent` was developed on `feat/stock-agent`, now merged into `main`.)
 
 ## Contents
 
