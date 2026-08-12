@@ -150,7 +150,7 @@ python -m agent_host.entrypoints.local_run serve
 
 ### StockAgent 用法
 
-`StockAgent` 在 `.env.example` 里默认就是开启的(`ENABLED_AGENTS=brief, chat, stock`、`IMAGE_AGENT=stock`)。可以再设置 `FINNHUB_API_KEY`(推荐——更好的新闻链接 + 同业股票传播;留空会优雅降级为只用 yfinance)以及 `VISION_MODEL` / `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` / `STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` 这些调优参数——都写在 `.env.example` 里。
+`StockAgent` 在 `.env.example` 里默认就是开启的(`ENABLED_AGENTS=brief, chat, stock`、`IMAGE_AGENT=stock`)。可以再设置 `FINNHUB_API_KEY`(推荐——更好的新闻链接 + 同业股票传播;留空会优雅降级为只用 yfinance)以及 `VISION_MODEL` / `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` / `STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` / `STOCK_MARKET_HEADLINES` 这些调优参数——都写在 `.env.example` 里。
 
 立刻从命令行运行一次:
 
@@ -172,7 +172,7 @@ python -m agent_host.entrypoints.local_run run stock
 
 最多 50 个代码。自选股为空不是错误——那就是默认的"跟踪大盘"模式。
 
-**每日复盘包含什么:** 四个指数(标普 500、纳斯达克、道琼斯,以及 SOX 费半)、你自选股里的显著异动(涨跌幅绝对值 top 5,且 ≥ 4%)**并附上归因**(财报、新闻,或诚实地写"没有明确催化剂"——绝不编造)、相关新闻(1-2 句话 + 链接,没有值得说的新闻的代码会被跳过),以及一个专门的财报小节。它在**美股假日或周末不会发送任何东西**(通过 `holidays` 包对照 XNYS 交易日历判断)。自选股为空时,默认改为一份追踪大盘的复盘,而不是盯着 500 家公司。
+**每日复盘包含什么:** 一份**固定的、由代码渲染的模板**——**不再由 LLM 写这条消息**,所以标题、章节、顺序每天都一样,也绝不编造。章节:**Indices**(标普 500、纳斯达克、道琼斯、SOX 费半、10 年期收益率)带数字——拉不到数据时老实写 "unavailable today",绝不编一段"大盘涨跌互现"的空话;**Notable Movers**(涨跌幅绝对值 top 5、≥ 4%),每只附**诚实的归因**——一条*可点的*近期头条、"reported earnings"、或 "no clear catalyst(likely sector/technical)";专门的 **Earnings** 小节(匹配今天或上一交易日,盘后发的财报也能抓到);以及 **Market Headlines**——general 市场新闻 top 8 条链接(宏观、地缘、跨公司)。它在**美股假日或周末不会发送任何东西**(`holidays` 包对照 XNYS 交易日历)。自选股为空时,退回到 Indices + Market Headlines。
 
 > **单股杠杆 ETF:** 如果某个异动标的是单股杠杆 ETF(如 `PLTU` = 2× `PLTR`),它的
 > "why" 和新闻会取自**正股**(`PLTU +12%` → *"PLTR 近期新闻"*),而 ETF 本身仍作为你的

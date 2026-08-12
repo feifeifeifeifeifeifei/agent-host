@@ -168,7 +168,7 @@ Telegram only delivers messages to a bot after a user has messaged it at least o
 `IMAGE_AGENT=stock`). Optionally set `FINNHUB_API_KEY` (recommended — better news links + peer
 propagation; an empty key gracefully degrades to yfinance-only) and the `VISION_MODEL` /
 `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` /
-`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` tuning knobs — all documented in `.env.example`.
+`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` / `STOCK_MARKET_HEADLINES` tuning knobs — all documented in `.env.example`.
 
 Run it once, right now, from the command line:
 
@@ -191,13 +191,16 @@ it never joins free-form chat:
 
 Max 50 tickers. An empty watchlist isn't an error — it's the default "track the market" mode.
 
-**What the daily recap contains:** four indices (S&P 500, Nasdaq, Dow, and SOX — 费半), your
-watchlist's notable movers (top 5 by |%| change, ≥ 4%) **with attributed causes** (earnings,
-news, or an honest "no clear catalyst" — never fabricated), relevant news (1–2 sentences + a
-link, skipping tickers with nothing notable), and a dedicated earnings section. It **sends
-nothing on market holidays or weekends** (checked against the XNYS trading calendar via the
-`holidays` package). An empty watchlist defaults to a market-wide recap instead of tracking 500
-individual names.
+**What the daily recap contains:** a **fixed, code-rendered template** — no LLM writes the
+message, so the title, sections, and order are identical every day and nothing is ever
+fabricated. Sections: **Indices** (S&P 500, Nasdaq, Dow, SOX 费半, 10Y yield) with figures — or an
+honest "unavailable today" if the feed fails, never a made-up summary; **Notable Movers** (top 5
+by |%| change, ≥ 4%), each with an honest cause — a *linked* recent headline, "reported earnings",
+or "no clear catalyst (likely sector/technical)"; a dedicated **Earnings** section (matches today
+or the prior trading session, so after-close reports are caught); and **Market Headlines** — the
+top 8 general-market news links (macro, geopolitical, cross-company). It **sends nothing on market
+holidays or weekends** (XNYS calendar via the `holidays` package). An empty watchlist falls back to
+Indices + Market Headlines.
 
 > **Single-stock leveraged ETFs:** if a mover is a single-stock leveraged ETF
 > (e.g. `PLTU` = 2× `PLTR`), its "why" and news are drawn from the **underlying**
