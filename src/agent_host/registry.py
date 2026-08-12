@@ -21,7 +21,8 @@ def build_services(config: Config, dry_run: bool = False) -> Services:
         channel=TelegramChannel(config.telegram_bot_token, config.telegram_chat_id,
                                 dry_run=dry_run),
         llm=LLMClient(config.openrouter_api_key, config.llm_model,
-                      config.llm_fallback_models),
+                      config.llm_fallback_models,
+                      vision_model=config.vision_model),
         store=build_store(config),
         config=config,
     )
@@ -31,7 +32,8 @@ def _agent_factories() -> dict:
     # lazy imports so Host tests don't require the concrete agents to exist yet
     from agent_host.agents.brief.agent import BriefAgent
     from agent_host.agents.chat.agent import ChatAgent
-    return {"brief": BriefAgent, "chat": ChatAgent}
+    from agent_host.agents.stock.agent import StockAgent
+    return {"brief": BriefAgent, "chat": ChatAgent, "stock": StockAgent}
 
 
 def build_agents(config: Config) -> list:

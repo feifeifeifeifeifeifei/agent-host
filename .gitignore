@@ -15,7 +15,9 @@ venv/
 # Build / deploy artifacts
 dist/
 build/
+pkg/
 *.zip
+function.zip.prev-*
 
 # Personal notes (personal reading only, not for the repo)
 docs/my-notes/

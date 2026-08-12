@@ -26,6 +26,7 @@ writes conversation memory and dedup state in one DynamoDB table.
 6. [Add a Function URL (the webhook endpoint)](#6-add-a-function-url-the-webhook-endpoint)
 7. [Register the Telegram webhook](#7-register-the-telegram-webhook)
 8. [Create the daily schedule (EventBridge)](#8-create-the-daily-schedule-eventbridge)
+8b. [StockAgent — deployment delta](#8b-stockagent--deployment-delta)
 9. [Verify everything end to end](#9-verify-everything-end-to-end)
 10. [Cost & teardown](#10-cost--teardown)
 
@@ -537,6 +538,83 @@ cat response.json
 
 **Confirm it worked:** `response.json` should contain `{"statusCode": 200, "body": "ok"}`, and
 your Telegram chat should receive the brief message within a few seconds.
+
+---
+
+## 8b. StockAgent — deployment delta
+
+Sections 1–8 stand up the base host (`BriefAgent` + `ChatAgent`). Adding `StockAgent` — and the
+concurrent-fetch optimization — changes three of those steps. Apply these on top.
+
+**§4 Package — heavier native deps, and two gotchas.** `StockAgent` pulls in `yfinance`, `pandas`,
+`numpy`, `curl_cffi`, and **`lxml`** (earnings parsing). These are all native x86_64 wheels, so the
+four `manylinux2014_x86_64` flags in §4 are now **mandatory**, not optional. Two things learned in
+production:
+
+- **Do not install into `-t build/`.** `build/` collides with setuptools' own build directory and
+  gets polluted with junk under `lib/`. Install into a *different* folder — e.g. `-t pkg/` — and
+  zip from there.
+- **The zip is ~49 MB** (vs ~25–30 MB for the base). Still under Lambda's 50 MB direct-upload
+  limit — but only after you **trim the runtime-provided packages**, so the "optional shrink" in §5
+  becomes **required** here: delete `boto3`, `botocore`, `s3transfer` before zipping (keep
+  `pandas`/`numpy`/`curl_cffi`/`lxml`).
+
+```bash
+rm -rf pkg function.zip
+pip install . \
+  --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 \
+  --only-binary=:all: -t pkg/
+rm -rf pkg/boto3 pkg/botocore pkg/s3transfer            # runtime-provided; ~20 MB saved
+find pkg -type d -name __pycache__ -prune -exec rm -rf {} +
+cd pkg && zip -rq ../function.zip . && cd ..
+unzip -l function.zip | grep -E 'lxml/|pandas/|curl_cffi/'   # sanity: native deps present
+ls -lh function.zip                                          # sanity: < 50 MB
+```
+
+> **Re-deploying a code-only change** (e.g. the concurrent-fetch update) without rebuilding every
+> wheel: unzip the last known-good `function.zip` into a staging dir, replace **only** `agent_host/`
+> with the current `src/agent_host`, add any *new* dependency in isolation, then re-zip. This keeps
+> the already-validated dependency versions instead of pulling newer ones:
+> ```bash
+> mkdir stage && cd stage && unzip -q ../function.zip
+> rm -rf agent_host && cp -r ../src/agent_host agent_host
+> pip install 'lxml>=5' --platform manylinux2014_x86_64 --implementation cp \
+>   --python-version 3.12 --abi cp312 --only-binary=:all: --no-deps -t .   # only if adding lxml
+> find . -type d -name __pycache__ -prune -exec rm -rf {} +
+> zip -rq ../function.zip . && cd ..
+> ```
+
+**§5 Lambda config — more memory and time, plus stock env vars.** The recap loads pandas/numpy/lxml
+and fetches concurrently, so the base **256 MB / 60 s will OOM or time out** on a real watchlist.
+Set **Memory 1024 MB**, **Timeout 2 min (120 s)**. Add these to the §5 environment-variable table:
+
+| Key | Value |
+|---|---|
+| `ENABLED_AGENTS` | `brief, chat, stock` (add `stock`) |
+| `FINNHUB_API_KEY` | your Finnhub free-tier key (empty ⇒ graceful degrade to yfinance-only news) |
+| `VISION_MODEL` | `google/gemini-2.5-flash` (or leave unset for the code default) |
+| `IMAGE_AGENT` | `stock` (routes inbound photos to StockAgent's screenshot import) |
+| `STOCK_FETCH_WORKERS` | `8` (optional — concurrent-fetch cap; lower it to reduce peak memory) |
+
+The other `STOCK_*` knobs (`STOCK_MAX_TICKERS`, `STOCK_MOVER_THRESHOLD_PCT`, `STOCK_SCHEDULE_TZ`, …)
+all have code defaults — set them only to override. Updating an existing function from the CLI:
+
+```bash
+aws lambda update-function-code --function-name agent-host \
+  --zip-file fileb://function.zip --region <region>
+aws lambda update-function-configuration --function-name agent-host \
+  --memory-size 1024 --timeout 120 --region <region>
+```
+
+**§8 Schedule — a second schedule, and the brief is turned off.** `StockAgent` gets its **own**
+EventBridge schedule alongside the brief's, created exactly like §8 but with:
+
+- **Name** `agent-host-stock-recap`; **cron** `0 16 ? * MON-FRI *`; **timezone** `America/Vancouver`;
+  **target** `agent-host`; **input** `{"mode": "scheduled", "agent": "stock"}`. Weekdays only
+  (trading days; market-holiday gating is in code).
+- The base **`agent-host-daily-brief` schedule is set to DISABLED.** `BriefAgent` ships a placeholder
+  news source (see the README), so its daily push is turned off to avoid a daily "No new items
+  today." Re-enable it only after wiring in a real source.
 
 ---
 

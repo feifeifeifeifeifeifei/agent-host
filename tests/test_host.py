@@ -83,3 +83,59 @@ def test_message_from_authorized_chat_id_is_still_handled():
     reply = host.handle_message({"message": {"chat": {"id": 42}, "text": "hello"}})
     assert reply == "CHAT"
     assert ch.sent[-1]["text"] == "CHAT"
+
+import pytest
+
+
+def test_unknown_command_returns_and_sends_hint():
+    class Chat(Agent):
+        name = "chat"; commands = ["/help"]
+        def handle_message(self, msg, svc): return "CHAT"
+    svc = _svc()
+    host = Host([Chat()], svc, default_agent="chat")
+    reply = host.handle_message({"message": {"chat": {"id": 42}, "text": "/nope arg"}})
+    assert reply is not None
+    assert "Unknown command" in reply and "/nope" in reply and "/help" in reply
+    assert svc.channel.sent[-1]["text"] == reply          # hint was actually sent
+
+
+def test_photo_message_routes_to_image_agent():
+    captured = {}
+    class Stock(Agent):
+        name = "stock"; commands = ["/confirm"]
+        def handle_message(self, msg, svc):
+            captured["photos"] = msg.photo_file_ids
+            return "PHOTO OK"
+    class Chat(Agent):
+        name = "chat"
+        def handle_message(self, msg, svc): return "CHAT"
+    ch = TelegramChannel(token="t", chat_id="42", dry_run=True)
+    cfg = type("C", (), {"telegram_chat_id": "42", "image_agent": "stock"})()
+    svc = Services(channel=ch, llm=None, store=FakeStore(), config=cfg)
+    host = Host([Chat(), Stock()], svc, default_agent="chat")
+    reply = host.handle_message({"message": {"chat": {"id": 42}, "photo": [
+        {"file_id": "small", "file_size": 100},
+        {"file_id": "big", "file_size": 900},
+    ]}})
+    assert reply == "PHOTO OK"
+    assert captured["photos"] == ["big"]                  # routed with the file_id
+
+
+def test_mixed_case_command_routes_to_owning_agent_not_unknown_hint():
+    class Stock(Agent):
+        name = "stock"; commands = ["/tickers"]
+        def handle_message(self, msg, svc): return "TICKERS OK"
+    svc = _svc()
+    host = Host([Stock()], svc, default_agent="stock")
+    reply = host.handle_message({"message": {"chat": {"id": 42}, "text": "/TICKERS"}})
+    assert reply == "TICKERS OK"
+    assert "Unknown command" not in (svc.channel.sent[-1]["text"] if svc.channel.sent else "")
+
+
+def test_duplicate_command_across_agents_raises():
+    class A(Agent):
+        name = "a"; commands = ["/dup"]
+    class B(Agent):
+        name = "b"; commands = ["/dup"]
+    with pytest.raises(ValueError, match="/dup"):
+        Host([A(), B()], _svc(), default_agent="a")

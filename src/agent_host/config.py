@@ -27,6 +27,19 @@ class Config(BaseSettings):
     default_agent: str = "chat"
     output_language: str = "zh"
 
+    # --- StockAgent (Phase 01) ---
+    finnhub_api_key: str = ""
+    stock_max_tickers: int = 50
+    stock_mover_threshold_pct: float = 4.0
+    stock_max_movers: int = 5
+    stock_peer_limit: int = 5
+    stock_fetch_workers: int = 8   # max concurrent Yahoo fetches (rate-limit cap)
+    stock_news_lookback_days: int = 2   # company-news window for catalyst attribution
+    stock_market_headlines: int = 8   # general market-news headlines in the recap
+    stock_schedule_tz: str = "America/Vancouver"   # doc-only; real schedule in EventBridge
+    image_agent: str = "stock"                     # which agent consumes photo messages
+    vision_model: str = "google/gemini-2.5-flash"   # cheap vision-capable OpenRouter id
+
     @field_validator("llm_fallback_models", "enabled_agents", mode="before")
     @classmethod
     def _split_csv(cls, v):

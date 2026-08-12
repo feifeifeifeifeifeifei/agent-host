@@ -48,14 +48,29 @@ class TelegramChannel(Channel):
 
     def parse_update(self, raw: dict) -> InboundMessage | None:
         msg = raw.get("message")
-        if not msg or "text" not in msg:
+        if not msg:
             return None
+        photos = msg.get("photo") or []
+        if "text" not in msg and not photos:
+            return None
+        photo_file_ids: list[str] = []
+        if photos:
+            largest = max(photos, key=lambda p: p.get("file_size", 0))
+            photo_file_ids = [largest["file_id"]]
         return InboundMessage(
             chat_id=str(msg["chat"]["id"]),
-            text=msg["text"],
+            text=msg.get("text") or msg.get("caption") or "",
             message_id=msg.get("message_id"),
+            photo_file_ids=photo_file_ids,
             raw=raw,
         )
+
+    def download_file(self, file_id: str) -> bytes:
+        # 1) resolve the file_path via getFile, then 2) download the raw bytes.
+        resp = self._http.get(self._url("getFile"), params={"file_id": file_id})
+        file_path = resp.json()["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{self._token}/{file_path}"
+        return self._http.get(file_url).content
 
     def get_updates(self, offset: int | None) -> list[dict]:
         params = {"timeout": 25}

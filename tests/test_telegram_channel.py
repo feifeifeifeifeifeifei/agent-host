@@ -58,3 +58,56 @@ def test_parse_update_reads_message():
 def test_parse_update_ignores_non_message():
     ch = TelegramChannel(token="t", chat_id="42", dry_run=True)
     assert ch.parse_update({"update_id": 5, "edited_channel_post": {}}) is None
+
+
+class FakeBytesResponse:
+    def __init__(self, content):
+        self.status_code = 200
+        self.content = content
+
+
+class FakeGetHttp:
+    """Routes getFile to a JSON response and the file URL to raw bytes."""
+    def __init__(self):
+        self.calls = []
+
+    def get(self, url, params=None):
+        self.calls.append((url, params))
+        if "getFile" in url:
+            return FakeResponse(200, {"ok": True,
+                                      "result": {"file_path": "photos/file_7.jpg"}})
+        return FakeBytesResponse(b"IMAGE_BYTES")
+
+
+def test_parse_update_reads_photo_largest_size_and_caption():
+    ch = TelegramChannel(token="t", chat_id="42", dry_run=True)
+    msg = ch.parse_update({"update_id": 6, "message": {
+        "message_id": 11, "chat": {"id": 42}, "caption": "my holdings",
+        "photo": [
+            {"file_id": "small", "file_size": 100},
+            {"file_id": "big", "file_size": 900},
+        ],
+    }})
+    assert msg.chat_id == "42"
+    assert msg.photo_file_ids == ["big"]     # largest size selected
+    assert msg.text == "my holdings"         # caption becomes text
+    assert msg.message_id == 11
+
+
+def test_parse_update_photo_without_caption_has_empty_text():
+    ch = TelegramChannel(token="t", chat_id="42", dry_run=True)
+    msg = ch.parse_update({"update_id": 7, "message": {
+        "chat": {"id": 42},
+        "photo": [{"file_id": "only", "file_size": 5}],
+    }})
+    assert msg.photo_file_ids == ["only"] and msg.text == ""
+
+
+def test_download_file_fetches_bytes_via_getfile_then_url():
+    http = FakeGetHttp()
+    ch = TelegramChannel(token="TKN", chat_id="42", http=http, dry_run=False)
+    data = ch.download_file("big")
+    assert data == b"IMAGE_BYTES"
+    # first call is getFile with the file_id, second is the file URL with the token+path
+    assert "getFile" in http.calls[0][0] and http.calls[0][1] == {"file_id": "big"}
+    assert http.calls[1][0] == "https://api.telegram.org/file/botTKN/photos/file_7.jpg"
