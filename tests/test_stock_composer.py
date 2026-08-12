@@ -2,92 +2,74 @@ from agent_host.agents.stock.composer import RecapData, StockComposer
 from agent_host.models import DigestItem
 
 
-class FakeLLM:
-    def __init__(self, out="<b>RECAP</b>"):
-        self.out = out
-        self.messages = None
-    def complete(self, messages):
-        self.messages = messages
-        return self.out
-
-    @property
-    def user_content(self):
-        return self.messages[-1]["content"] if self.messages else ""
+def _c(recap):
+    return StockComposer("en").compose(recap)
 
 
-def _full_recap():
-    return RecapData(
-        indices=[{"symbol": "^GSPC", "name": "S&P 500", "level": 5050.0, "pct": 1.0}],
-        movers=[{"symbol": "NVDA", "pct": -6.3, "cause": 'news: "Nvidia slips"',
-                 "headlines": [DigestItem(source="finnhub", title="Nvidia slips",
-                                          url="https://x/1", summary="Guidance light.")]},
-                {"symbol": "AAPL", "pct": 5.2, "cause": "earnings report", "headlines": []}],
-        earnings=[{"symbol": "AAPL", "note": "reports earnings today"}],
-    )
+def test_full_recap_renders_fixed_structure():
+    out = _c(RecapData(
+        title="US Market Recap · Aug 6, 2026",
+        indices=[{"symbol": "^GSPC", "name": "S&P 500", "level": 7723.55, "pct": -0.17}],
+        movers=[
+            {"symbol": "MP", "pct": 8.28, "catalyst": "MP", "cause_kind": "none", "headline": None},
+            {"symbol": "GOOG", "pct": -4.05, "catalyst": "GOOG", "cause_kind": "news",
+             "headline": DigestItem(source="finnhub", title="Alphabet news", url="https://x/g")},
+            {"symbol": "DDOG", "pct": -19.03, "catalyst": "DDOG", "cause_kind": "earnings",
+             "headline": None},
+        ],
+        earnings=[{"symbol": "DDOG", "note": "reported earnings"}],
+        market_news=[DigestItem(source="finnhub", title="Fed holds rates", url="https://x/fed")],
+    ))
+    assert "<b>US Market Recap · Aug 6, 2026</b>" in out
+    assert "S&amp;P 500 (^GSPC): -0.17% to 7723.55" in out
+    assert "no clear catalyst (likely sector/technical)" in out
+    assert '<a href="https://x/g">Alphabet news</a>' in out
+    assert "reported earnings" in out
+    assert '<b>Market Headlines</b>' in out and '<a href="https://x/fed">Fed holds rates</a>' in out
 
 
-def test_compose_returns_llm_output_and_feeds_all_sections():
-    llm = FakeLLM()
-    out = StockComposer(llm, "en").compose(_full_recap())
-    assert out == "<b>RECAP</b>"
-    body = llm.user_content
-    for header in ("INDICES", "MOVERS", "EARNINGS"):
-        assert header in body
-    assert "cause:" in body                             # per-mover cause label is rendered
-    assert "earnings report" in body                    # AAPL's cause (no quotes, survives escaping)
-    assert "Nvidia slips: Guidance light." in body      # NVDA's own headline, grouped under it
+def test_leveraged_mover_lines_reference_catalyst():
+    out = _c(RecapData(
+        title="T",
+        indices=[{"symbol": "^GSPC", "name": "S&P 500", "level": 1.0, "pct": 1.0}],
+        movers=[
+            {"symbol": "PLTU", "pct": 6.0, "catalyst": "PLTR", "cause_kind": "news",
+             "headline": DigestItem(source="finnhub", title="Palantir wins contract",
+                                    url="https://x/pltr")},
+            {"symbol": "TSLL", "pct": 7.0, "catalyst": "TSLA", "cause_kind": "earnings",
+             "headline": None},
+        ],
+        earnings=[],
+        market_news=[],
+    ))
+    assert "recent PLTR headline:" in out
+    assert '<a href="https://x/pltr">Palantir wins contract</a>' in out
+    assert "reported earnings (via TSLA)" in out
 
 
-def test_compose_omits_empty_sections():
-    recap = RecapData(
-        indices=[{"symbol": "^GSPC", "name": "S&P 500", "level": 5050.0, "pct": 1.0}],
-        movers=[], earnings=[],
-    )
-    llm = FakeLLM()
-    StockComposer(llm, "en").compose(recap)
-    body = llm.user_content
-    assert "INDICES" in body
-    assert "MOVERS" not in body
-    assert "MARKET NEWS" not in body
-    assert "EARNINGS" not in body
+def test_indices_unavailable_when_empty():
+    out = _c(RecapData(title="T", indices=[], movers=[], earnings=[], market_news=[]))
+    assert "Indices: unavailable today" in out
 
 
-def test_compose_escapes_fetched_text():
-    recap = RecapData(
-        indices=[], movers=[], earnings=[],
-        market_news=[DigestItem(source="finnhub",
-                                title="<script>alert(1)</script>",
-                                url="https://x", summary="a & b")],
-    )
-    llm = FakeLLM()
-    StockComposer(llm, "en").compose(recap)
-    body = llm.user_content
-    assert "<script>" not in body
-    assert "&lt;script&gt;" in body
-    assert "a &amp; b" in body
+def test_market_mode_has_no_movers_or_earnings():
+    out = _c(RecapData(title="T", indices=[{"symbol": "^GSPC", "name": "S&P 500",
+                                            "level": 1.0, "pct": 1.0}],
+                       movers=[], earnings=[],
+                       market_news=[DigestItem(source="finnhub", title="Macro", url="u")],
+                       personalized=False))
+    assert "Notable Movers" not in out and "Earnings" not in out
+    assert "Market Headlines" in out
 
 
-def test_compose_all_empty_returns_fixed_string_without_llm_call():
-    llm = FakeLLM()
-    out = StockComposer(llm, "en").compose(
-        RecapData(indices=[], movers=[], earnings=[]))
+def test_all_empty_returns_no_data():
+    out = _c(RecapData(title="T", indices=[], movers=[], earnings=[], market_news=[],
+                       personalized=False))
     assert out == "<b>No market data available today.</b>"
-    assert llm.messages is None            # LLM never invoked
 
 
-def test_index_level_none_does_not_crash():
-    recap = RecapData(
-        indices=[{"symbol": "^DJI", "name": "Dow Jones", "level": None, "pct": None}],
-        movers=[], earnings=[],
-    )
-    llm = FakeLLM()
-    StockComposer(llm, "en").compose(recap)
-    assert "n/a" in llm.user_content
-
-
-def test_compose_renders_market_news_section():
-    recap = RecapData(indices=[], movers=[], earnings=[],
-                      market_news=[DigestItem(source="finnhub", title="Macro move", url="u")])
-    llm = FakeLLM()
-    StockComposer(llm, "en").compose(recap)
-    assert "MARKET NEWS" in llm.user_content
+def test_escapes_fetched_text():
+    out = _c(RecapData(title="T", indices=[], movers=[], earnings=[],
+                       market_news=[DigestItem(source="finnhub",
+                                               title="<script>alert(1)</script>", url="u")]))
+    assert "<script>" not in out and "&lt;script&gt;" in out

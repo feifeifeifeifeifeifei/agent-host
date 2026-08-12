@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 from agent_host.agents.base import Agent
 from agent_host.agents.stock.calendar import is_trading_day as _is_trading_day
+from agent_host.agents.stock.calendar import prior_trading_day as _prior_trading_day
 from agent_host.agents.stock.composer import RecapData, StockComposer
 from agent_host.agents.stock.image_import import ImageImporter
 from agent_host.agents.stock.leveraged import catalyst_symbol
@@ -161,30 +162,36 @@ class StockAgent(Agent):
         return [{"symbol": s, "pct": p} for s, p in notable[:max_movers]]
 
     def _gather_earnings(self, market, pool, today):
+        window = {today, _prior_trading_day(today)}
         cats = {s: catalyst_symbol(s) for s in pool}
         targets = list(dict.fromkeys(cats.values()))          # deduped catalyst symbols
         by_cat = self._safe(lambda: market.earnings_dates_bulk(targets), {})
         out = []
         for s in pool:
             cat = cats[s]
-            if today in by_cat.get(cat, []):
-                note = ("reports earnings today" if cat == s
-                        else f"reports earnings today (via {cat})")
+            if window & set(by_cat.get(cat, [])):
+                note = "reported earnings" if cat == s else f"reported earnings (via {cat})"
                 out.append({"symbol": s, "note": note})
         return out
 
-    _MOVER_HEADLINES = 3
+    _ROUNDUP_MARKERS = (
+        "top gainers", "top losers", "gainers and losers", "biggest movers",
+        "stocks to watch", "stocks that defined", "things to know", "market wrap",
+        "movers to watch", "stocks moving", "premarket movers", "after-hours movers",
+    )
 
-    @staticmethod
-    def _mover_cause(sym, earnings_syms, headlines):
-        cat = catalyst_symbol(sym)
-        lev = cat != sym
-        if sym in earnings_syms:
-            return f"underlying {cat} reports earnings" if lev else "earnings report"
-        if headlines:
-            title = getattr(headlines[0], "title", "") or "recent company news"
-            return f'{cat} news: "{title}"' if lev else f'news: "{title}"'
-        return "no clear catalyst (likely sector/technical)"
+    @classmethod
+    def _is_roundup(cls, title) -> bool:
+        t = (title or "").lower()
+        return any(marker in t for marker in cls._ROUNDUP_MARKERS)
+
+    @classmethod
+    def _pick_headline(cls, items):
+        """First company-specific (non-roundup) headline, or None."""
+        for it in items:
+            if not cls._is_roundup(getattr(it, "title", "")):
+                return it
+        return None
 
     # ------------------------------------------------------------------ scheduled
     def run_scheduled(self, svc) -> None:
@@ -199,7 +206,7 @@ class StockAgent(Agent):
         indices = self._gather_indices(market)
 
         earnings: list = []
-        market_news: list = []
+        movers: list = []
         if pool:
             mode = "personalized"
             pct = self._safe(lambda: market.pct_changes(pool), {})
@@ -207,21 +214,34 @@ class StockAgent(Agent):
             earnings = self._gather_earnings(market, pool, today)
             earnings_syms = {e["symbol"] for e in earnings}
             for m in movers:
-                cat = catalyst_symbol(m["symbol"])
-                items = self._safe(lambda c=cat: news.company_news(c), [])
-                m["headlines"] = items[:self._MOVER_HEADLINES]
-                m["cause"] = self._mover_cause(m["symbol"], earnings_syms, items)
+                sym = m["symbol"]
+                m["catalyst"] = catalyst_symbol(sym)
+                if sym in earnings_syms:
+                    m["cause_kind"] = "earnings"
+                    m["headline"] = None
+                else:
+                    items = self._safe(lambda c=m["catalyst"]: news.company_news(c), [])
+                    hl = self._pick_headline(items)
+                    m["cause_kind"] = "news" if hl is not None else "none"
+                    m["headline"] = hl
         else:
             mode = "market"
-            movers = []
-            market_news = self._safe(news.market_news, [])
 
-        recap = RecapData(indices=indices, movers=movers,
-                          earnings=earnings, market_news=market_news)
+        cap = getattr(svc.config, "stock_market_headlines", 8)
+        mover_urls = {getattr(m.get("headline"), "url", None) for m in movers}
+        mover_urls.discard(None)
+        fetched = self._safe(news.market_news, [])
+        market_news = [n for n in fetched
+                       if getattr(n, "url", None) not in mover_urls][:cap]
+
+        title = f"US Market Recap · {today:%b} {today.day}, {today.year}"
+        recap = RecapData(title=title, indices=indices, movers=movers,
+                          earnings=earnings, market_news=market_news,
+                          personalized=bool(pool))
         if self._composer_factory is not None:
             composer = self._composer_factory()
         else:
-            composer = StockComposer(svc.llm, getattr(svc.config, "output_language", "en"))
+            composer = StockComposer(getattr(svc.config, "output_language", "en"))
         html_text = composer.compose(recap)
         svc.channel.send(html_text)
         svc.store.record_run({"agent": "stock", "mode": mode, "chars": len(html_text)})

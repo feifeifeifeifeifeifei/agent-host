@@ -156,9 +156,9 @@ def test_earnings_today_flows_into_recap_and_why():
         composer_factory=lambda: cc,
     )
     agent.run_scheduled(svc)
-    assert cc.recap.earnings == [{"symbol": "AAPL", "note": "reports earnings today"}]
+    assert cc.recap.earnings == [{"symbol": "AAPL", "note": "reported earnings"}]
     aapl = next(m for m in cc.recap.movers if m["symbol"] == "AAPL")
-    assert aapl["cause"] == "earnings report"
+    assert aapl["cause_kind"] == "earnings"
 
 
 def test_agent_gathers_earnings_via_bulk_call():
@@ -204,8 +204,9 @@ def test_leveraged_mover_why_and_news_come_from_underlying():
     )
     agent.run_scheduled(svc)
     pltu = next(m for m in cc.recap.movers if m["symbol"] == "PLTU")
-    assert pltu["cause"] == 'PLTR news: "Palantir wins contract"'
-    assert any(getattr(n, "url", "") == "https://x/pltr" for n in pltu["headlines"])
+    assert pltu["catalyst"] == "PLTR"
+    assert pltu["cause_kind"] == "news"
+    assert pltu["headline"].url == "https://x/pltr"
 
 
 def test_leveraged_mover_earnings_come_from_underlying():
@@ -221,9 +222,10 @@ def test_leveraged_mover_earnings_come_from_underlying():
     )
     agent.run_scheduled(svc)
     assert cc.recap.earnings == [{"symbol": "PLTU",
-                                  "note": "reports earnings today (via PLTR)"}]
+                                  "note": "reported earnings (via PLTR)"}]
     pltu = next(m for m in cc.recap.movers if m["symbol"] == "PLTU")
-    assert pltu["cause"] == "underlying PLTR reports earnings"
+    assert pltu["catalyst"] == "PLTR"
+    assert pltu["cause_kind"] == "earnings"
 
 
 def test_two_leveraged_etfs_same_underlying_each_get_its_news():
@@ -241,10 +243,10 @@ def test_two_leveraged_etfs_same_underlying_each_get_its_news():
     )
     agent.run_scheduled(svc)
     by = {m["symbol"]: m for m in cc.recap.movers}
-    assert by["TSLL"]["cause"] == 'TSLA news: "Tesla delivers"'
-    assert by["TSLR"]["cause"] == 'TSLA news: "Tesla delivers"'
-    assert by["TSLL"]["headlines"][0].url == "https://x/tsla"
-    assert by["TSLR"]["headlines"][0].url == "https://x/tsla"
+    assert by["TSLL"]["cause_kind"] == "news"
+    assert by["TSLR"]["cause_kind"] == "news"
+    assert by["TSLL"]["headline"].url == "https://x/tsla"
+    assert by["TSLR"]["headline"].url == "https://x/tsla"
 
 
 def test_mover_with_no_news_reads_no_clear_catalyst():
@@ -258,8 +260,8 @@ def test_mover_with_no_news_reads_no_clear_catalyst():
     )
     agent.run_scheduled(svc)
     mp = next(m for m in cc.recap.movers if m["symbol"] == "MP")
-    assert mp["cause"] == "no clear catalyst (likely sector/technical)"
-    assert mp["headlines"] == []
+    assert mp["cause_kind"] == "none"
+    assert mp["headline"] is None
 
 
 def test_mover_with_news_cause_is_its_own_top_headline():
@@ -275,8 +277,8 @@ def test_mover_with_news_cause_is_its_own_top_headline():
     )
     agent.run_scheduled(svc)
     mrvl = next(m for m in cc.recap.movers if m["symbol"] == "MRVL")
-    assert mrvl["cause"] == 'news: "US bars China optical procurement"'
-    assert mrvl["headlines"][0].url == "https://x/mrvl"
+    assert mrvl["cause_kind"] == "news"
+    assert mrvl["headline"].url == "https://x/mrvl"
 
 
 def test_movers_news_is_not_cross_wired():
@@ -291,9 +293,10 @@ def test_movers_news_is_not_cross_wired():
     )
     agent.run_scheduled(svc)
     by = {m["symbol"]: m for m in cc.recap.movers}
-    assert by["MU"]["cause"] == 'news: "AI memory demand"'
-    assert by["MRVL"]["cause"] == "no clear catalyst (likely sector/technical)"   # not MU's
-    assert by["MRVL"]["headlines"] == []
+    assert by["MU"]["cause_kind"] == "news"
+    assert by["MU"]["headline"].url == "https://x/mu"
+    assert by["MRVL"]["cause_kind"] == "none"   # not MU's
+    assert by["MRVL"]["headline"] is None
 
 
 def test_agent_static_attrs():
@@ -301,3 +304,56 @@ def test_agent_static_attrs():
     assert a.name == "stock"
     assert set(a.commands) == {"/tickers", "/add", "/remove", "/reset",
                                "/help", "/confirm", "/cancel"}
+
+
+def test_earnings_window_catches_prior_trading_day():
+    # today = Thu 2026-08-06; prior session Wed 2026-08-05. DDOG reported after
+    # close 08-05; the 08-06 recap must flag it as earnings.
+    store = MemStore(); svc = _svc(store); cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"DDOG": -19.0},
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}},
+                          earnings={"DDOG": [date(2026, 8, 5)]}),   # prior trading day
+        watchlist_factory=lambda: FakeWatchlist(["DDOG"]),
+        composer_factory=lambda: cc,
+        today_fn=lambda tz: date(2026, 8, 6),
+    )
+    agent.run_scheduled(svc)
+    ddog = next(m for m in cc.recap.movers if m["symbol"] == "DDOG")
+    assert ddog["cause_kind"] == "earnings"
+    assert cc.recap.earnings and cc.recap.earnings[0]["symbol"] == "DDOG"
+
+
+def test_roundup_headline_not_used_as_mover_cause():
+    store = MemStore(); svc = _svc(store); cc = CapturingComposer()
+    roundup = DigestItem(source="finnhub",
+                         title="Tuesday's session: top gainers and losers in the S&P500",
+                         url="https://x/roundup")
+    agent = _agent(
+        market=FakeMarket(pct={"DDOG": -5.4},
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={"DDOG": [roundup]}),
+        watchlist_factory=lambda: FakeWatchlist(["DDOG"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    ddog = next(m for m in cc.recap.movers if m["symbol"] == "DDOG")
+    assert ddog["cause_kind"] == "none"          # roundup rejected as a cause
+    assert ddog["headline"] is None
+
+
+def test_market_headlines_populated_in_personalized_mode():
+    store = MemStore(); svc = _svc(store); cc = CapturingComposer()
+    agent = _agent(
+        market=FakeMarket(pct={"AAPL": 5.0},
+                          indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+        news=FakeNews(company={"AAPL": [DigestItem(source="finnhub", title="Apple thing",
+                                                   url="https://x/aapl")]},
+                      market=[DigestItem(source="finnhub", title="Fed holds rates",
+                                         url="https://x/fed")]),
+        watchlist_factory=lambda: FakeWatchlist(["AAPL"]),
+        composer_factory=lambda: cc,
+    )
+    agent.run_scheduled(svc)
+    assert cc.recap.movers                                   # personalized
+    assert any(getattr(n, "url", "") == "https://x/fed" for n in cc.recap.market_news)
