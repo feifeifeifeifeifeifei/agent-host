@@ -2,7 +2,7 @@ import html
 from dataclasses import dataclass, field
 
 _NO_DATA = "<b>No market data available today.</b>"
-_INDICES_UNAVAILABLE = "Indices: unavailable today"
+_INDICES_UNAVAILABLE = "unavailable today"
 
 
 @dataclass

@@ -49,7 +49,7 @@ def test_leveraged_mover_lines_reference_catalyst():
 
 def test_indices_unavailable_when_empty():
     out = _c(RecapData(title="T", indices=[], movers=[], earnings=[], market_news=[]))
-    assert "Indices: unavailable today" in out
+    assert "<b>Indices</b>\nunavailable today" in out
 
 
 def test_market_mode_has_no_movers_or_earnings():
