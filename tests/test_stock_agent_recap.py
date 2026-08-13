@@ -343,7 +343,7 @@ def test_roundup_headline_not_used_as_mover_cause():
 
 
 class _SummaryLLM:
-    def __init__(self, out="<b>Today's Summary</b> Stocks rose on tame inflation."):
+    def __init__(self, out="Stocks rose on tame inflation."):
         self.out = out
         self.calls = []
     def complete(self, messages, model=None):
@@ -364,6 +364,26 @@ def test_opus_summary_appended_when_model_configured():
     assert "<b>Today's Summary</b>" in sent
     assert sent.startswith("<b>RECAP</b>")                       # recap first, summary appended after
     assert svc.llm.calls == ["anthropic/opus-test"]             # used the configured model
+
+
+def test_opus_summary_output_is_html_escaped():
+    # The model returns plain prose that happens to contain bare HTML-special
+    # characters (very likely, e.g. "S&P 500"). Since we send with
+    # parse_mode=HTML, anything the model writes must be escaped by us before
+    # it reaches Telegram, or the whole message (recap + summary) fails to send.
+    store = MemStore(); svc = _svc(store)
+    svc.config.stock_summary_model = "anthropic/opus-test"      # enable
+    svc.llm = _SummaryLLM(out="S&P 500 rose <n> points today.")
+    cc = CapturingComposer()
+    agent = _agent(market=FakeMarket(indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+                   watchlist_factory=lambda: FakeWatchlist([]),
+                   composer_factory=lambda: cc)
+    agent.run_scheduled(svc)
+    sent = svc.channel.sent[-1]["text"]
+    assert "<b>Today's Summary</b>" in sent                      # our heading is intact
+    assert "S&amp;P 500" in sent                                 # model's "&" escaped
+    assert "S&P 500" not in sent                                 # bare "&" never reaches Telegram
+    assert "&lt;n&gt;" in sent                                   # model's "<n>" escaped
 
 
 def test_no_summary_when_model_unset():
