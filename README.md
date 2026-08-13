@@ -5,8 +5,8 @@
 A small, pluggable **host** for running Telegram-connected AI agents, running **serverless on AWS**. The host owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a pluggable storage backend, and message routing — while individual **agents** plug in to do the work. Three ship out of the box: `BriefAgent` (a minimal **reference/scaffold** agent — it uses a placeholder news source to exercise the scheduled-push pipeline, kept as the simplest possible agent and **not run on a schedule in the live deployment**), `ChatAgent` (free-form conversation with per-chat memory), and `StockAgent` (the flagship — a command-only, daily after-close US-market recap with screenshot-driven watchlist import). `ChatAgent` and `StockAgent` do the real work; `BriefAgent` is the template for the pluggable-agent pattern. The *same* codebase runs two ways: a local long-polling process for development, and an AWS Lambda function in production.
 
 <p align="center">
-  <img src="docs/1.png" alt="StockAgent daily recap — indices with figures, notable movers with linked-headline causes, and a Market Headlines section" width="360"><br>
-  <em>The flagship <code>StockAgent</code>'s daily recap — a fixed, code-rendered template: indices, movers with honest linked-headline causes, and market headlines.</em>
+  <img src="docs/1.png" alt="StockAgent daily recap — indices with figures, notable movers with linked-headline causes, a Market Headlines section, and an Opus-written Today's Summary" width="360"><br>
+  <em>The flagship <code>StockAgent</code>'s daily recap — a fixed, code-rendered template (indices, movers with honest linked-headline causes, market headlines), capped by an optional Opus-written “Today's Summary”.</em>
 </p>
 
 ## Branches
@@ -180,7 +180,7 @@ Telegram only delivers messages to a bot after a user has messaged it at least o
 `IMAGE_AGENT=stock`). Optionally set `FINNHUB_API_KEY` (recommended — better news links + peer
 propagation; an empty key gracefully degrades to yfinance-only) and the `VISION_MODEL` /
 `STOCK_MAX_TICKERS` / `STOCK_MOVER_THRESHOLD_PCT` / `STOCK_MAX_MOVERS` / `STOCK_PEER_LIMIT` /
-`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` / `STOCK_MARKET_HEADLINES` tuning knobs — all documented in `.env.example`.
+`STOCK_SCHEDULE_TZ` / `STOCK_FETCH_WORKERS` / `STOCK_NEWS_LOOKBACK_DAYS` / `STOCK_MARKET_HEADLINES` / `STOCK_SUMMARY_MODEL` (the opt-in Today's Summary) tuning knobs — all documented in `.env.example`.
 
 Run it once, right now, from the command line:
 
@@ -213,6 +213,16 @@ or the prior trading session, so after-close reports are caught); and **Market H
 top 8 general-market news links (macro, geopolitical, cross-company). It **sends nothing on market
 holidays or weekends** (XNYS calendar via the `holidays` package). An empty watchlist falls back to
 Indices + Market Headlines.
+
+**Today's Summary (optional, opt-in).** Everything above is deterministic and LLM-free — the
+guardrail's "the model is never the authority" stance applied to *output*, not just input. The lone
+exception is an optional closing **Today's Summary**: set `STOCK_SUMMARY_MODEL` (e.g.
+`anthropic/claude-opus-4.8`) and one best-effort model call appends a 3–4 sentence prose wrap-up **to
+the same message**, instructed to restate *only* what the recap already contains — no new number,
+ticker, or headline, and no advice. It's additive and fail-safe: **off by default** (empty model),
+output-bounded (`max_tokens`-capped so a costly model stays affordable), and if the call fails — or
+the OpenRouter account runs out of credit — the recap still sends unchanged, just without the
+paragraph. The facts stay code-rendered; the model only rephrases them.
 
 > **Single-stock leveraged ETFs:** if a mover is a single-stock leveraged ETF
 > (e.g. `PLTU` = 2× `PLTR`), its "why" and news are drawn from the **underlying**
