@@ -17,13 +17,13 @@ class LLMClient:
             client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
         self._client = client
 
-    def complete(self, messages: list[dict]) -> str:
+    def complete(self, messages: list[dict], model: str | None = None) -> str:
         last_exc = None
-        for model in [self._model, *self._fallbacks]:
+        for m in [model or self._model, *self._fallbacks]:
             for attempt in range(self._attempts):
                 try:
                     resp = self._client.chat.completions.create(
-                        model=model, messages=messages
+                        model=m, messages=messages
                     )
                     return resp.choices[0].message.content
                 except Exception as exc:  # noqa: BLE001 - retry, then next model

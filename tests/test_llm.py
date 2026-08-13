@@ -88,3 +88,23 @@ def test_complete_vision_falls_back_to_primary_model_when_unset():
     llm = LLMClient(api_key="k", model="text/m", client=fake, sleep=_no_sleep)
     llm.complete_vision([{"role": "system", "content": "x"}], b"img")
     assert fake.captured["model"] == "text/m"
+
+
+def test_complete_uses_per_call_model_override():
+    seen = []
+
+    class FakeResp:
+        def __init__(self): self.choices = [type("C", (), {"message": type("M", (), {"content": "ok"})()})()]
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(model, messages, **kw):
+                    seen.append(model)
+                    return FakeResp()
+
+    from agent_host.llm import LLMClient
+    c = LLMClient("k", "default-model", fallback_models=["fb"], client=FakeClient(), sleep=lambda _x: None)
+    assert c.complete([{"role": "user", "content": "hi"}], model="opus-x") == "ok"
+    assert seen[0] == "opus-x"          # override tried first, not the default

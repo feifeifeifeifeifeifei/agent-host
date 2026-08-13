@@ -342,6 +342,42 @@ def test_roundup_headline_not_used_as_mover_cause():
     assert ddog["headline"] is None
 
 
+class _SummaryLLM:
+    def __init__(self, out="<b>Today's Summary</b> Stocks rose on tame inflation."):
+        self.out = out
+        self.calls = []
+    def complete(self, messages, model=None):
+        self.calls.append(model)
+        return self.out
+
+
+def test_opus_summary_appended_when_model_configured():
+    store = MemStore(); svc = _svc(store)
+    svc.config.stock_summary_model = "anthropic/opus-test"      # enable
+    svc.llm = _SummaryLLM()
+    cc = CapturingComposer()
+    agent = _agent(market=FakeMarket(indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+                   watchlist_factory=lambda: FakeWatchlist([]),   # market mode: simplest path
+                   composer_factory=lambda: cc)
+    agent.run_scheduled(svc)
+    sent = svc.channel.sent[-1]["text"]
+    assert "<b>Today's Summary</b>" in sent
+    assert sent.startswith("<b>RECAP</b>")                       # recap first, summary appended after
+    assert svc.llm.calls == ["anthropic/opus-test"]             # used the configured model
+
+
+def test_no_summary_when_model_unset():
+    store = MemStore(); svc = _svc(store)                        # Cfg has no stock_summary_model -> ""
+    svc.llm = _SummaryLLM()
+    cc = CapturingComposer()
+    agent = _agent(market=FakeMarket(indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+                   watchlist_factory=lambda: FakeWatchlist([]),
+                   composer_factory=lambda: cc)
+    agent.run_scheduled(svc)
+    assert svc.llm.calls == []                                   # no summary call
+    assert "Today's Summary" not in svc.channel.sent[-1]["text"]
+
+
 def test_market_headlines_populated_in_personalized_mode():
     store = MemStore(); svc = _svc(store); cc = CapturingComposer()
     agent = _agent(

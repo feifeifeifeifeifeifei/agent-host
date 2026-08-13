@@ -36,6 +36,7 @@ class Config(BaseSettings):
     stock_fetch_workers: int = 8   # max concurrent Yahoo fetches (rate-limit cap)
     stock_news_lookback_days: int = 2   # company-news window for catalyst attribution
     stock_market_headlines: int = 8   # general market-news headlines in the recap
+    stock_summary_model: str = ""   # OpenRouter model id for the appended "Today's Summary"; empty = off
     stock_schedule_tz: str = "America/Vancouver"   # doc-only; real schedule in EventBridge
     image_agent: str = "stock"                     # which agent consumes photo messages
     vision_model: str = "google/gemini-2.5-flash"   # cheap vision-capable OpenRouter id
