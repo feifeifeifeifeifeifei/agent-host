@@ -4,6 +4,11 @@
 
 `agent-host` 是一个小巧、可插拔的**宿主(host)**,用来运行接入 Telegram 的 AI agent,**以 serverless 方式跑在 AWS 上**。宿主持有共享的底层设施——一个 Telegram 通道、一个基于 OpenRouter 的 LLM 客户端、一个可插拔的存储后端(本地 SQLite,云上 DynamoDB),以及消息路由——各个 **agent** 插进来干实际的活。开箱自带三个:`BriefAgent`(一个最小的**参考/骨架** agent —— 用占位新闻源跑通"定时推送"链路,当作最简 agent 的模板,**在线上并不定时运行**)、`ChatAgent`(带每会话记忆的自由对话),以及 `StockAgent`(旗舰 —— 仅命令式、每个美股交易日收盘后的复盘,支持截图导入自选股)。真正干活的是 `ChatAgent` 和 `StockAgent`;`BriefAgent` 是可插拔架构的模板。**同一套代码**有两种跑法:本地 long-polling 进程(开发),AWS Lambda 函数(生产)。
 
+<p align="center">
+  <img src="docs/1.png" alt="StockAgent 每日复盘 —— 指数带数字、异动股附可点头条归因、以及 Market Headlines 板块" width="360"><br>
+  <em>旗舰 <code>StockAgent</code> 的每日复盘 —— 固定的、由代码渲染的模板:指数、附诚实可点头条归因的异动股、以及 market headlines。</em>
+</p>
+
 ## 分支说明
 
 `main` 就是完整的宿主,线上部署的也是它。**三个 agent 都在这儿,通过 registry 插入、用 `ENABLED_AGENTS` 开关**——这才是"可插拔 agent"的本意,而不是每个 agent 一条分支:
@@ -180,8 +185,6 @@ python -m agent_host.entrypoints.local_run run stock
 最多 50 个代码。自选股为空不是错误——那就是默认的"跟踪大盘"模式。
 
 **每日复盘包含什么:** 一份**固定的、由代码渲染的模板**——**不再由 LLM 写这条消息**,所以标题、章节、顺序每天都一样,也绝不编造。章节:**Indices**(标普 500、纳斯达克、道琼斯、SOX 费半、10 年期收益率)带数字——拉不到数据时老实写 "unavailable today",绝不编一段"大盘涨跌互现"的空话;**Notable Movers**(涨跌幅绝对值 top 5、≥ 4%),每只附**诚实的归因**——一条*可点的*近期头条、"reported earnings"、或 "no clear catalyst(likely sector/technical)";专门的 **Earnings** 小节(匹配今天或上一交易日,盘后发的财报也能抓到);以及 **Market Headlines**——general 市场新闻 top 8 条链接(宏观、地缘、跨公司)。它在**美股假日或周末不会发送任何东西**(`holidays` 包对照 XNYS 交易日历)。自选股为空时,退回到 Indices + Market Headlines。
-
-<p align="center"><img src="docs/1.png" alt="一份每日复盘 —— 指数带数字、异动股附可点头条归因、以及 Market Headlines 板块" width="360"></p>
 
 > **单股杠杆 ETF:** 如果某个异动标的是单股杠杆 ETF(如 `PLTU` = 2× `PLTR`),它的
 > "why" 和新闻会取自**正股**(`PLTU +12%` → *"PLTR 近期新闻"*),而 ETF 本身仍作为你的

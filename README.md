@@ -4,6 +4,11 @@
 
 A small, pluggable **host** for running Telegram-connected AI agents, running **serverless on AWS**. The host owns the shared plumbing — a Telegram channel, an OpenRouter-backed LLM client, a pluggable storage backend, and message routing — while individual **agents** plug in to do the work. Three ship out of the box: `BriefAgent` (a minimal **reference/scaffold** agent — it uses a placeholder news source to exercise the scheduled-push pipeline, kept as the simplest possible agent and **not run on a schedule in the live deployment**), `ChatAgent` (free-form conversation with per-chat memory), and `StockAgent` (the flagship — a command-only, daily after-close US-market recap with screenshot-driven watchlist import). `ChatAgent` and `StockAgent` do the real work; `BriefAgent` is the template for the pluggable-agent pattern. The *same* codebase runs two ways: a local long-polling process for development, and an AWS Lambda function in production.
 
+<p align="center">
+  <img src="docs/1.png" alt="StockAgent daily recap — indices with figures, notable movers with linked-headline causes, and a Market Headlines section" width="360"><br>
+  <em>The flagship <code>StockAgent</code>'s daily recap — a fixed, code-rendered template: indices, movers with honest linked-headline causes, and market headlines.</em>
+</p>
+
 ## Branches
 
 `main` is the complete host, and it's what's deployed on Lambda. **All three agents live here and plug into the same host via the registry, toggled by `ENABLED_AGENTS`** — this *is* the pluggable-agent design, rather than a branch per agent:
@@ -208,8 +213,6 @@ or the prior trading session, so after-close reports are caught); and **Market H
 top 8 general-market news links (macro, geopolitical, cross-company). It **sends nothing on market
 holidays or weekends** (XNYS calendar via the `holidays` package). An empty watchlist falls back to
 Indices + Market Headlines.
-
-<p align="center"><img src="docs/1.png" alt="A daily recap — indices with figures, notable movers with linked-headline causes, and the Market Headlines section" width="360"></p>
 
 > **Single-stock leveraged ETFs:** if a mover is a single-stock leveraged ETF
 > (e.g. `PLTU` = 2× `PLTR`), its "why" and news are drawn from the **underlying**
