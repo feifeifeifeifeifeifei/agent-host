@@ -80,6 +80,8 @@ flowchart LR
 
 **Screenshot import, end to end:** send a photo of brokerage or TradingView holdings → a quarantined, schema-locked vision extractor (`VISION_MODEL`, an OpenRouter vision-capable model) reads *only* ticker symbols, never account data → the same deterministic allowlist gate validates the candidates → the bot shows **only the validated tickers** → `/confirm` saves them, `/cancel` discards them. The raw image is held in memory only — never stored, logged, or echoed; balances and account numbers are never even asked for.
 
+<p align="center"><img src="docs/2.png" alt="Screenshot import — a TradingView watchlist becomes validated tickers, then /confirm adds them to the watchlist" width="360"></p>
+
 ## Tech stack & what it demonstrates
 
 | Layer | What's used |
@@ -206,6 +208,8 @@ or the prior trading session, so after-close reports are caught); and **Market H
 top 8 general-market news links (macro, geopolitical, cross-company). It **sends nothing on market
 holidays or weekends** (XNYS calendar via the `holidays` package). An empty watchlist falls back to
 Indices + Market Headlines.
+
+<p align="center"><img src="docs/1.png" alt="A daily recap — indices with figures, notable movers with linked-headline causes, and the Market Headlines section" width="360"></p>
 
 > **Single-stock leveraged ETFs:** if a mover is a single-stock leveraged ETF
 > (e.g. `PLTU` = 2× `PLTR`), its "why" and news are drawn from the **underlying**

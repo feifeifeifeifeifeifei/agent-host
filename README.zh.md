@@ -80,6 +80,8 @@ flowchart LR
 
 **截图导入的完整流程:** 发一张券商或 TradingView 持仓的截图 → 一个隔离的、schema 锁定的视觉提取器(`VISION_MODEL`,一个 OpenRouter 视觉模型)只读出股票代码,绝不读账户数据 → 同一个确定性白名单闸门校验候选项 → bot **只展示通过校验的代码** → `/confirm` 保存,`/cancel` 丢弃。原始图片只存在于内存里——绝不落盘、不写日志、不回显;余额和账号从来都不会被问及。
 
+<p align="center"><img src="docs/2.png" alt="截图导入 —— TradingView 自选清单被校验成 ticker,/confirm 后加入自选股" width="360"></p>
+
 ## 技术栈与亮点
 
 | 层面 | 用了什么 |
@@ -178,6 +180,8 @@ python -m agent_host.entrypoints.local_run run stock
 最多 50 个代码。自选股为空不是错误——那就是默认的"跟踪大盘"模式。
 
 **每日复盘包含什么:** 一份**固定的、由代码渲染的模板**——**不再由 LLM 写这条消息**,所以标题、章节、顺序每天都一样,也绝不编造。章节:**Indices**(标普 500、纳斯达克、道琼斯、SOX 费半、10 年期收益率)带数字——拉不到数据时老实写 "unavailable today",绝不编一段"大盘涨跌互现"的空话;**Notable Movers**(涨跌幅绝对值 top 5、≥ 4%),每只附**诚实的归因**——一条*可点的*近期头条、"reported earnings"、或 "no clear catalyst(likely sector/technical)";专门的 **Earnings** 小节(匹配今天或上一交易日,盘后发的财报也能抓到);以及 **Market Headlines**——general 市场新闻 top 8 条链接(宏观、地缘、跨公司)。它在**美股假日或周末不会发送任何东西**(`holidays` 包对照 XNYS 交易日历)。自选股为空时,退回到 Indices + Market Headlines。
+
+<p align="center"><img src="docs/1.png" alt="一份每日复盘 —— 指数带数字、异动股附可点头条归因、以及 Market Headlines 板块" width="360"></p>
 
 > **单股杠杆 ETF:** 如果某个异动标的是单股杠杆 ETF(如 `PLTU` = 2× `PLTR`),它的
 > "why" 和新闻会取自**正股**(`PLTU +12%` → *"PLTR 近期新闻"*),而 ETF 本身仍作为你的
