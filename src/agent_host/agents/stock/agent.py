@@ -23,6 +23,20 @@ INDEX_NAMES = {
 _SUMMARY_MAX_TOKENS = 512
 
 
+def _strip_echoed_heading(text: str) -> str:
+    """Drop a leading 'Today's Summary' title if the model echoed it as its first
+    line, so our own <b>Today's Summary</b> heading is never duplicated. Handles
+    the straight/curly apostrophe and an optional trailing colon."""
+    lines = text.split("\n")
+    if lines and lines[0].strip().rstrip(":").strip().lower() in (
+        "today's summary", "today’s summary",
+    ):
+        lines = lines[1:]
+        while lines and not lines[0].strip():   # eat the blank line under the title
+            lines.pop(0)
+    return "\n".join(lines).strip()
+
+
 def _today_in(tz: str) -> date:
     return datetime.now(ZoneInfo(tz)).date()
 
@@ -207,8 +221,9 @@ class StockAgent(Agent):
         if not model or not recap_text:
             return ""
         system = (
-            "You are a market-recap editor. Write a tight 'Today's Summary' — 3 to 4 sentences "
-            "of plain prose — for the after-close US-market recap below. Summarize ONLY what is "
+            "You are a market-recap editor. Write the body of a 'Today's Summary' — 3 to 4 "
+            "sentences of plain prose — for the after-close US-market recap below. Do NOT repeat "
+            "the title or add any heading line; output only the sentences. Summarize ONLY what is "
             "in the recap: the day's main driver/theme, how the indices and chips moved, the "
             "notable watchlist movers and why, and the key macro/geopolitical thread. Do NOT "
             "introduce any number, ticker, fact, or headline that is not in the recap, and give "
@@ -220,6 +235,7 @@ class StockAgent(Agent):
              {"role": "user", "content": recap_text}],
             model=model, max_tokens=_SUMMARY_MAX_TOKENS,
         ) or "").strip()
+        text = _strip_echoed_heading(text)
         if not text:
             return ""
         return "<b>Today's Summary</b>\n" + html.escape(text)

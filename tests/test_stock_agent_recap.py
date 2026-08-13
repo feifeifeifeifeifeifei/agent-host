@@ -389,6 +389,27 @@ def test_opus_summary_output_is_html_escaped():
     assert "&lt;n&gt;" in sent                                   # model's "<n>" escaped
 
 
+def test_summary_strips_model_echoed_heading():
+    # Models sometimes echo the section title as their first line; our own
+    # <b>Today's Summary</b> heading must then not end up duplicated. Cover both
+    # the straight and curly apostrophe, with/without a trailing colon.
+    for echoed in ("Today's Summary\n\nStocks rose broadly today.",
+                   "Today’s Summary:\nStocks rose broadly today."):
+        store = MemStore(); svc = _svc(store)
+        svc.config.stock_summary_model = "anthropic/opus-test"
+        svc.llm = _SummaryLLM(out=echoed)
+        cc = CapturingComposer()
+        agent = _agent(market=FakeMarket(indices={"^GSPC": {"level": 5050.0, "pct": 1.0}}),
+                       watchlist_factory=lambda: FakeWatchlist([]),
+                       composer_factory=lambda: cc)
+        agent.run_scheduled(svc)
+        sent = svc.channel.sent[-1]["text"]
+        # Count "Summary" (no apostrophe) so html.escape of the echoed copy's
+        # apostrophe (&#x27;) can't hide the duplicate the user actually sees.
+        assert sent.count("Summary") == 1                # heading appears exactly once
+        assert "Stocks rose broadly today." in sent      # the actual prose survives
+
+
 def test_no_summary_when_model_unset():
     store = MemStore(); svc = _svc(store)                        # Cfg has no stock_summary_model -> ""
     svc.llm = _SummaryLLM()
