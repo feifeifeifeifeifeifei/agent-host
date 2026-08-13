@@ -90,6 +90,23 @@ def test_complete_vision_falls_back_to_primary_model_when_unset():
     assert fake.captured["model"] == "text/m"
 
 
+def test_complete_forwards_max_tokens_when_set():
+    # A costly model on a low-credit OpenRouter account 402s unless the request
+    # caps max_tokens (OpenRouter reserves the full default max cost up front).
+    fake = _CaptureClient("ok")
+    llm = LLMClient(api_key="k", model="primary/m", client=fake, sleep=_no_sleep)
+    assert llm.complete([{"role": "user", "content": "hi"}], max_tokens=512) == "ok"
+    assert fake.captured["kw"].get("max_tokens") == 512
+
+
+def test_complete_omits_max_tokens_when_unset():
+    # Existing callers (chat/brief) pass no cap; we must not start sending one.
+    fake = _CaptureClient("ok")
+    llm = LLMClient(api_key="k", model="primary/m", client=fake, sleep=_no_sleep)
+    assert llm.complete([{"role": "user", "content": "hi"}]) == "ok"
+    assert "max_tokens" not in fake.captured["kw"]
+
+
 def test_complete_uses_per_call_model_override():
     seen = []
 

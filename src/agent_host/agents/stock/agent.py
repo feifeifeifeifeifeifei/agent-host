@@ -16,6 +16,12 @@ INDEX_NAMES = {
     "^SOX": "PHLX Semiconductor", "^TNX": "US 10Y Yield",
 }
 
+# Cap the Today's Summary output. A 3–4 sentence summary needs only a couple
+# hundred tokens, and bounding it keeps the (costly) Opus request affordable on
+# a low-credit OpenRouter account — an uncapped request reserves the model's full
+# default max and 402s. See llm.LLMClient.complete.
+_SUMMARY_MAX_TOKENS = 512
+
 
 def _today_in(tz: str) -> date:
     return datetime.now(ZoneInfo(tz)).date()
@@ -212,7 +218,7 @@ class StockAgent(Agent):
         text = (svc.llm.complete(
             [{"role": "system", "content": system},
              {"role": "user", "content": recap_text}],
-            model=model,
+            model=model, max_tokens=_SUMMARY_MAX_TOKENS,
         ) or "").strip()
         if not text:
             return ""

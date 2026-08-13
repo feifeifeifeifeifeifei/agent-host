@@ -17,13 +17,19 @@ class LLMClient:
             client = OpenAI(api_key=api_key, base_url=OPENROUTER_BASE_URL)
         self._client = client
 
-    def complete(self, messages: list[dict], model: str | None = None) -> str:
+    def complete(self, messages: list[dict], model: str | None = None,
+                 max_tokens: int | None = None) -> str:
         last_exc = None
+        # Only forward max_tokens when a caller caps it. OpenRouter reserves the
+        # model's *default* max-output cost up front, so a costly model on a
+        # low-credit account 402s ("requires more credits, or fewer max_tokens")
+        # unless the request bounds the output.
+        extra = {} if max_tokens is None else {"max_tokens": max_tokens}
         for m in [model or self._model, *self._fallbacks]:
             for attempt in range(self._attempts):
                 try:
                     resp = self._client.chat.completions.create(
-                        model=m, messages=messages
+                        model=m, messages=messages, **extra
                     )
                     return resp.choices[0].message.content
                 except Exception as exc:  # noqa: BLE001 - retry, then next model

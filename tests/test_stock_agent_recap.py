@@ -346,8 +346,10 @@ class _SummaryLLM:
     def __init__(self, out="Stocks rose on tame inflation."):
         self.out = out
         self.calls = []
-    def complete(self, messages, model=None):
+        self.max_tokens = []
+    def complete(self, messages, model=None, max_tokens=None):
         self.calls.append(model)
+        self.max_tokens.append(max_tokens)
         return self.out
 
 
@@ -364,6 +366,7 @@ def test_opus_summary_appended_when_model_configured():
     assert "<b>Today's Summary</b>" in sent
     assert sent.startswith("<b>RECAP</b>")                       # recap first, summary appended after
     assert svc.llm.calls == ["anthropic/opus-test"]             # used the configured model
+    assert svc.llm.max_tokens == [512]                          # bounded output → fits low OpenRouter credit
 
 
 def test_opus_summary_output_is_html_escaped():
