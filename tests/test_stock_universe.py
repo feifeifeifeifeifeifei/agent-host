@@ -159,3 +159,47 @@ def test_load_universe_with_no_fetch_uses_default_fetch(monkeypatch):
     assert len(calls) == 1
     blob = store.get_prefs("__universe__")
     assert blob.get("fetched_at")   # cached for next call
+
+
+def test_load_universe_falls_back_to_stale_cache_on_fetch_failure():
+    store = FakeStore()
+    load_universe(store, fetch=lambda: (NASDAQ, OTHER))        # 先填缓存
+    blob = store.get_prefs("__universe__")
+    blob["fetched_at"] = "2000-01-01T00:00:00+00:00"           # 强制过期
+    store.set_prefs("__universe__", blob)
+
+    def boom_fetch():
+        raise RuntimeError("nasdaqtrader down")
+
+    u = load_universe(store, ttl_days=7, fetch=boom_fetch)     # 过期 + fetch 失败
+    assert u.is_listed("AAPL")                                 # 回退到旧缓存,不抛
+
+
+def test_load_universe_raises_when_fetch_fails_and_no_cache():
+    store = FakeStore()
+
+    def boom_fetch():
+        raise RuntimeError("nasdaqtrader down")
+
+    import pytest
+    with pytest.raises(RuntimeError):
+        load_universe(store, fetch=boom_fetch)                 # 无缓存可回退 → 抛
+
+
+def test_default_fetch_retries_transient_failures(monkeypatch):
+    attempts = []
+
+    class FakeResponse:
+        def __init__(self, text): self.text = text
+
+    def flaky_get(url, timeout=15):
+        attempts.append(url)
+        if len(attempts) < 3:                                  # 前两次失败
+            raise RuntimeError("transient")
+        return FakeResponse(NASDAQ if "nasdaqlisted" in url else OTHER)
+
+    monkeypatch.setattr(universe_module, "_RETRY_SLEEP", lambda _n: None)  # 别真 sleep
+    monkeypatch.setattr(universe_module.httpx, "get", flaky_get)
+    nasdaq_text, other_text = universe_module._default_fetch()
+    assert nasdaq_text == NASDAQ
+    assert len(attempts) >= 3                                  # 确有重试

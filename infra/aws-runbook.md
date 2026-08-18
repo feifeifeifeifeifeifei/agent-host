@@ -1,5 +1,17 @@
 # AWS Deploy Runbook — agent-host
 
+> **The deployment source of truth is [`infra/template.yaml`](template.yaml) (AWS SAM):**
+> `sam build --use-container && sam deploy --guided`
+> (secrets are passed via `--parameter-overrides`, never committed.)
+> `--use-container` is **required** — it builds the native wheels (pandas/numpy/lxml/curl_cffi)
+> against the Lambda runtime image and runs the repo's `Makefile` build inside that same image.
+> This document keeps the manual console steps as a **reference for understanding the
+> architecture and for troubleshooting**.
+>
+> **Unverified on the maintainer's machine:** the SAM build path (`sam build --use-container`)
+> has not been run end-to-end here (no `sam` CLI / Docker available). Before trusting this
+> template as deployable, run `sam build --use-container` yourself and confirm it succeeds.
+
 > 🇨🇳 中文版见 [aws-runbook.zh.md](aws-runbook.zh.md)。
 
 This is a click-by-click guide to deploying `agent-host` on AWS Lambda, with Telegram as the

@@ -1,9 +1,10 @@
 # tests/test_brief_agent.py
 from agent_host.agents.brief.agent import BriefAgent
 from agent_host.agents.brief.sources.base import Source
-from agent_host.services import Services
 from agent_host.channels.telegram import TelegramChannel
 from agent_host.models import DigestItem, InboundMessage
+from agent_host.services import Services
+
 
 class OneItem(Source):
     name = "one"

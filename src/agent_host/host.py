@@ -1,5 +1,7 @@
+import html
 import logging
 from dataclasses import replace
+
 from agent_host.agents.base import Agent
 from agent_host.services import Services
 
@@ -32,8 +34,13 @@ class Host:
         agent = self._agents[agent_name]
         try:
             agent.run_scheduled(self._svc_for(agent))
-        except Exception:  # noqa: BLE001 - a failing agent must not crash the host
+        except Exception as exc:  # noqa: BLE001 - a failing agent must not crash the host
             log.exception("agent %s run_scheduled failed", agent_name)
+            try:
+                self._services.channel.send(
+                    f"⚠️ scheduled {agent_name} failed: {html.escape(str(exc))}")
+            except Exception:  # noqa: BLE001 - alerting must never crash the host either
+                log.exception("failed to send failure alert for %s", agent_name)
 
     def _unknown_command_hint(self, cmd: str) -> str:
         available = ", ".join(sorted(self._commands)) or "(none)"

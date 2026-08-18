@@ -1,5 +1,6 @@
 from agent_host.config import Config
 
+
 def test_config_reads_env_and_defaults(monkeypatch):
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
     monkeypatch.setenv("TELEGRAM_CHAT_ID", "42")

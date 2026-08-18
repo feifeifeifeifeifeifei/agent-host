@@ -1,7 +1,8 @@
 # tests/test_chat_agent.py
 from agent_host.agents.chat.agent import ChatAgent
+from agent_host.models import ConversationTurn, InboundMessage
 from agent_host.services import Services
-from agent_host.models import InboundMessage, ConversationTurn
+
 
 class StubLLM:
     def __init__(self): self.messages=None

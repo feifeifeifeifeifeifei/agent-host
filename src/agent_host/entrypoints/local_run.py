@@ -1,4 +1,5 @@
 import sys
+
 from agent_host import registry
 from agent_host.config import Config
 

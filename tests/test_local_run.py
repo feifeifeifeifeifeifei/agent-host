@@ -1,5 +1,6 @@
 from agent_host.entrypoints import local_run
 
+
 class FakeHost:
     def __init__(self): self.ran=[]; self.handled=[]
     def run_scheduled(self, name): self.ran.append(name)

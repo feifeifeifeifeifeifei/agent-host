@@ -1,11 +1,12 @@
 import json
-from agent_host.agents.stock.universe import Universe
-from agent_host.agents.stock.watchlist import WatchlistManager
+
 from agent_host.agents.stock.image_import import (
     MAX_IMAGE_BYTES,
     ImageImporter,
     parse_candidates,
 )
+from agent_host.agents.stock.universe import Universe
+from agent_host.agents.stock.watchlist import WatchlistManager
 
 NASDAQ_LISTED = (
     "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"

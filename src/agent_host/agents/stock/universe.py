@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 import httpx
+
+log = logging.getLogger(__name__)
 
 NASDAQ_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/nasdaqlisted.txt"
 OTHER_LISTED_URL = "https://www.nasdaqtrader.com/dynamic/SymDir/otherlisted.txt"
@@ -72,11 +76,24 @@ def _parse(text: str, symbol_col: str, types: dict) -> None:
         types[sym] = "etf" if parts[etf_i].strip() == "Y" else "equity"
 
 
-def _default_fetch() -> tuple[str, str]:
-    """Production fetcher: pulls the two NASDAQ Trader symbol directory files."""
-    nasdaq_text = httpx.get(NASDAQ_LISTED_URL, timeout=15).text
-    other_text = httpx.get(OTHER_LISTED_URL, timeout=15).text
-    return nasdaq_text, other_text
+def _RETRY_SLEEP(attempt: int) -> None:          # 可被测试 monkeypatch 掉
+    time.sleep(2 ** attempt)
+
+
+def _default_fetch(retries: int = 3) -> tuple[str, str]:
+    """Production fetcher: pulls the two NASDAQ Trader symbol directory files,
+    retrying transient failures with exponential backoff."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            nasdaq_text = httpx.get(NASDAQ_LISTED_URL, timeout=15).text
+            other_text = httpx.get(OTHER_LISTED_URL, timeout=15).text
+            return nasdaq_text, other_text
+        except Exception as exc:  # noqa: BLE001 - retry any transient fetch error
+            last_exc = exc
+            if attempt < retries - 1:
+                _RETRY_SLEEP(attempt)
+    raise last_exc
 
 
 def load_universe(store, *, ttl_days: int = 7, fetch=None) -> Universe:
@@ -85,7 +102,13 @@ def load_universe(store, *, ttl_days: int = 7, fetch=None) -> Universe:
         return Universe.from_blob(blob)
     if fetch is None:
         fetch = _default_fetch
-    nasdaq_text, other_text = fetch()
+    try:
+        nasdaq_text, other_text = fetch()
+    except Exception:  # noqa: BLE001 - fall back to stale cache if we have one
+        if blob:
+            log.warning("universe fetch failed; using stale cache")
+            return Universe.from_blob(blob)
+        raise
     uni = Universe.from_nasdaq_files(nasdaq_text, other_text)
     out = uni.to_blob()
     out["fetched_at"] = datetime.now(timezone.utc).isoformat()

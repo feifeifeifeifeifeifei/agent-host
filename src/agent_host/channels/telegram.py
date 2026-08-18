@@ -1,5 +1,6 @@
 import logging
 import time
+
 from agent_host.channels.base import Channel
 from agent_host.models import InboundMessage
 

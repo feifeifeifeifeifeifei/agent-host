@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: agent-host — Telegram LLM agent host (Lambda + DynamoDB + EventBridge)
+
+Parameters:
+  TelegramBotToken:      { Type: String, NoEcho: true }
+  TelegramChatId:        { Type: String, NoEcho: true }
+  TelegramWebhookSecret: { Type: String, NoEcho: true }
+  OpenrouterApiKey:      { Type: String, NoEcho: true }
+  FinnhubApiKey:         { Type: String, NoEcho: true, Default: "" }
+
+Resources:
+  Table:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      TableName: agent_host
+      PrimaryKey:
+        Name: pk
+        Type: String
+      # SimpleTable 默认 PAY_PER_REQUEST(按量计费),无需配置吞吐量
+
+  Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: agent-host
+      Runtime: python3.12
+      Architectures: [x86_64]
+      Handler: agent_host.entrypoints.lambda_handler.lambda_handler
+      CodeUri: ../
+      MemorySize: 1024
+      Timeout: 120
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref Table
+      Environment:
+        Variables:
+          STORE_BACKEND: dynamo
+          DYNAMO_TABLE: !Ref Table
+          ENABLED_AGENTS: "brief, chat, stock"
+          DEFAULT_AGENT: chat
+          IMAGE_AGENT: stock
+          OUTPUT_LANGUAGE: zh
+          TIMEZONE: Asia/Shanghai
+          VISION_MODEL: google/gemini-2.5-flash
+          TELEGRAM_BOT_TOKEN: !Ref TelegramBotToken
+          TELEGRAM_CHAT_ID: !Ref TelegramChatId
+          TELEGRAM_WEBHOOK_SECRET: !Ref TelegramWebhookSecret
+          OPENROUTER_API_KEY: !Ref OpenrouterApiKey
+          FINNHUB_API_KEY: !Ref FinnhubApiKey
+      FunctionUrlConfig:
+        AuthType: NONE
+      Events:
+        StockRecap:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: "cron(0 16 ? * MON-FRI *)"
+            ScheduleExpressionTimezone: America/Vancouver
+            Input: '{"mode": "scheduled", "agent": "stock"}'
+        DailyBrief:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: "cron(0 8 * * ? *)"
+            ScheduleExpressionTimezone: Asia/Shanghai
+            State: DISABLED   # brief 是占位 source,默认关闭(与生产一致)
+            Input: '{"mode": "scheduled", "agent": "brief"}'
+    Metadata:
+      BuildMethod: makefile
+
+Outputs:
+  FunctionUrl:
+    Description: Telegram webhook 端点(需在 Telegram setWebhook 注册)
+    Value: !GetAtt FunctionUrl.FunctionUrl

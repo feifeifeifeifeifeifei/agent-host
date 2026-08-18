@@ -1,4 +1,5 @@
 import pytest
+
 from agent_host.agents.stock.sources.base import MarketDataSource, NewsSource
 
 
@@ -29,7 +30,7 @@ def test_concrete_subclass_satisfies_protocol():
     assert N().company_news("AAPL") == []
 
 
-from datetime import datetime, date
+from datetime import date, datetime
 
 from agent_host.agents.stock.sources.yfinance_source import YFinanceSource
 
@@ -263,6 +264,7 @@ def test_company_news_window_uses_lookback_days():
 
 def test_company_news_lookback_defaults_to_2():
     import inspect
+
     from agent_host.agents.stock.sources.finnhub_source import FinnhubSource as F
     assert inspect.signature(F.__init__).parameters["lookback_days"].default == 2
 

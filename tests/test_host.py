@@ -1,7 +1,8 @@
-from agent_host.host import Host
-from agent_host.services import Services
 from agent_host.agents.base import Agent
 from agent_host.channels.telegram import TelegramChannel
+from agent_host.host import Host
+from agent_host.services import Services
+
 
 class FakeStore:
     def namespaced(self, agent): return self
@@ -139,3 +140,41 @@ def test_duplicate_command_across_agents_raises():
         name = "b"; commands = ["/dup"]
     with pytest.raises(ValueError, match="/dup"):
         Host([A(), B()], _svc(), default_agent="a")
+
+
+def test_failing_scheduled_agent_sends_alert():
+    svc = _svc()
+    class Boom(Agent):
+        name = "boom"
+        def run_scheduled(self, s): raise RuntimeError("detonated")
+    host = Host([Boom()], svc, default_agent="boom")
+    host.run_scheduled("boom")                       # 不抛
+    assert svc.channel.sent, "expected a failure alert to be sent"
+    text = svc.channel.sent[-1]["text"]
+    assert "boom" in text                            # 告警点名了失败的 agent（名字里不含 "detonated"，断言才有意义）
+    assert "detonated" in text                       # 告警包含了异常详情
+
+
+def test_failing_scheduled_agent_escapes_html_in_alert():
+    svc = _svc()
+    class Boom(Agent):
+        name = "boom"
+        def run_scheduled(self, s): raise RuntimeError("<b>boom</b> & co")
+    host = Host([Boom()], svc, default_agent="boom")
+    host.run_scheduled("boom")                       # 不抛
+    assert svc.channel.sent, "expected a failure alert to be sent"
+    text = svc.channel.sent[-1]["text"]
+    assert "&lt;b&gt;" in text                        # 尖括号被转义
+    assert "&amp;" in text                            # & 被转义
+    assert "<b>" not in text                          # 原始未转义的标签不应出现
+
+
+def test_alert_send_failure_does_not_crash():
+    svc = _svc()
+    def boom_send(*a, **k): raise RuntimeError("telegram down")
+    svc.channel.send = boom_send                     # 连告警本身都发不出去
+    class Boom(Agent):
+        name = "boom"
+        def run_scheduled(self, s): raise RuntimeError("kaboom")
+    host = Host([Boom()], svc, default_agent="boom")
+    host.run_scheduled("boom")                       # 仍不抛

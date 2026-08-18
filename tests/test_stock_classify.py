@@ -1,4 +1,4 @@
-from agent_host.agents.stock.classify import classify, TickerClass
+from agent_host.agents.stock.classify import TickerClass, classify
 
 
 class FakeUniverse:

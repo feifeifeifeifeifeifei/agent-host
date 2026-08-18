@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "moto[dynamodb]>=5"]
+dev = ["pytest>=8", "moto[dynamodb]>=5", "ruff>=0.6", "mypy>=1.11"]
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -27,3 +27,14 @@ where = ["src"]
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["F", "I"]   # pyflakes、import 排序(暂不启用 E:测试里的分号习惯/长行是刻意风格,不做 lint-fight)
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true   # 渐进策略:先不因第三方缺 stub 报错

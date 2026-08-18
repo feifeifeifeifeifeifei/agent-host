@@ -1,7 +1,10 @@
 import os
+
 import pytest
+
 from agent_host.config import Config
 from agent_host.registry import build_host
+
 
 @pytest.mark.skipif(
     os.getenv("RUN_E2E") != "1",

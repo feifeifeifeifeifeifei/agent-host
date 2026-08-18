@@ -1,9 +1,9 @@
-from agent_host.config import Config
-from agent_host.services import Services
-from agent_host.llm import LLMClient
 from agent_host.channels.telegram import TelegramChannel
-from agent_host.store.base import Store
+from agent_host.config import Config
 from agent_host.host import Host
+from agent_host.llm import LLMClient
+from agent_host.services import Services
+from agent_host.store.base import Store
 
 
 def build_store(config: Config) -> Store:

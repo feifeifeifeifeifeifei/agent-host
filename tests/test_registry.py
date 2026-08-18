@@ -1,4 +1,5 @@
 import pytest
+
 from agent_host import registry
 
 

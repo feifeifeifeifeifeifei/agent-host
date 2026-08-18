@@ -1,9 +1,9 @@
 # tests/test_stock_watchlist.py
 from agent_host.agents.stock.watchlist import (
-    sanitize_unicode,
-    normalize_symbol,
-    shape_ok,
     is_probable_crypto,
+    normalize_symbol,
+    sanitize_unicode,
+    shape_ok,
 )
 
 
@@ -48,15 +48,17 @@ def test_non_crypto_not_flagged():
 
 
 import string
+
 import pytest
+
+from agent_host.agents.stock.universe import Universe
 from agent_host.agents.stock.watchlist import (
-    validate_candidates,
-    ValidationResult,
     REASON_CRYPTO,
     REASON_SHAPE,
     REASON_UNKNOWN,
+    ValidationResult,
+    validate_candidates,
 )
-from agent_host.agents.stock.universe import Universe
 
 _NASDAQ = (
     "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"

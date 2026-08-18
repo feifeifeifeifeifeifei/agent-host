@@ -1,7 +1,8 @@
 import boto3
 from moto import mock_aws
-from agent_host.store.dynamo_store import DynamoStore
+
 from agent_host.models import ConversationTurn
+from agent_host.store.dynamo_store import DynamoStore
 
 
 @mock_aws

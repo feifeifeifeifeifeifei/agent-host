@@ -1,6 +1,7 @@
 from agent_host.agents.base import Agent
 from agent_host.services import Services
 
+
 def test_agent_defaults_and_override():
     class Echo(Agent):
         name = "echo"

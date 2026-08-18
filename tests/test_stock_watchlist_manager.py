@@ -1,5 +1,5 @@
-from agent_host.agents.stock.watchlist import WatchlistManager
 from agent_host.agents.stock.universe import Universe
+from agent_host.agents.stock.watchlist import WatchlistManager
 
 _NASDAQ = (
     "Symbol|Security Name|Market Category|Test Issue|Financial Status|Round Lot Size|ETF|NextShares\n"

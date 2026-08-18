@@ -1,5 +1,16 @@
 # AWS 部署手册 — agent-host(中文版)
 
+> **部署 source of truth 是 [`infra/template.yaml`](template.yaml)(AWS SAM):**
+> `sam build --use-container && sam deploy --guided`
+> (密钥通过 `--parameter-overrides` 传入,不入库。)
+> `--use-container` 是**必须**的——它会在与 Lambda 运行时一致的容器镜像里编译原生依赖
+> (pandas/numpy/lxml/curl_cffi)的 wheels,并在同一镜像里执行仓库根目录的 `Makefile` 构建。
+> 本文档保留手工控制台步骤,作为**原理讲解与故障排查**参考。
+>
+> **本机尚未验证:** 维护者的机器上没有 `sam` CLI / Docker,尚未跑通完整的
+> `sam build --use-container` 流程。在把这份模板当作"可直接部署"之前,请你自己先跑一遍
+> `sam build --use-container` 确认能成功。
+
 > 英文原版见 [aws-runbook.md](aws-runbook.md)。控制台按钮/字段名保留**英文原词**(加中文说明),这样无论你的 AWS 控制台是中文还是英文界面都能对上。命令、数值、JSON、handler 字符串等一律原样,不要翻译或改动。
 
 这是一份把 `agent-host` 部署到 AWS Lambda 的**点击级**手册,消息通道用 Telegram、存储后端用 DynamoDB。默认你**没有任何 AWS 经验**——每一步都给出确切的控制台路径或命令行,要填什么/选什么,以及**怎么确认这一步成功了**再进入下一步。

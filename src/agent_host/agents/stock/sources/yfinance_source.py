@@ -30,7 +30,8 @@ class YFinanceSource(MarketDataSource):
         # threads doing concurrent requests, and _map fans _fetch_history /
         # earnings_dates out across up to max_workers threads.
         import threading
-        from curl_cffi import requests as crequests   # lazy; native ext
+
+        from curl_cffi import requests as crequests  # lazy; native ext
         local = threading.local()
 
         def factory(sym):

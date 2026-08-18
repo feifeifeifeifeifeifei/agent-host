@@ -1,4 +1,4 @@
-from agent_host.models import InboundMessage, ConversationTurn, DigestItem
+from agent_host.models import ConversationTurn, DigestItem, InboundMessage
 
 
 def test_models_construct_with_defaults():

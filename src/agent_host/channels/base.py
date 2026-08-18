@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+
 from agent_host.models import InboundMessage
 
 

@@ -1,7 +1,8 @@
 import hashlib
+
 from agent_host.agents.base import Agent
-from agent_host.agents.brief.sources.placeholder import PlaceholderSource
 from agent_host.agents.brief.composer import Composer
+from agent_host.agents.brief.sources.placeholder import PlaceholderSource
 
 
 def _key(item) -> str:

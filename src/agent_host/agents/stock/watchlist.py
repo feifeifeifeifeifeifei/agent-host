@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 
 # --- rejection reasons (stable strings; Tasks 4-5 and the agent surface these) ---
 REASON_CRYPTO = "crypto not supported"
@@ -61,13 +63,10 @@ def is_probable_crypto(s: str) -> bool:
     return bool(m and m.group(1) in _CRYPTO_BASES)
 
 
-from dataclasses import dataclass, field
-
-
 @dataclass
 class ValidationResult:
-    accepted: list = field(default_factory=list)   # list[str]
-    rejected: list = field(default_factory=list)    # list[tuple[str, str]]
+    accepted: list[str] = field(default_factory=list)
+    rejected: list[tuple[str, str]] = field(default_factory=list)
 
 
 def validate_candidates(raw, universe, *, max_tickers: int) -> ValidationResult:
@@ -99,9 +98,6 @@ def validate_candidates(raw, universe, *, max_tickers: int) -> ValidationResult:
         seen.add(sym)
         result.accepted.append(sym)
     return result
-
-
-from datetime import datetime, timezone
 
 
 class WatchlistManager:

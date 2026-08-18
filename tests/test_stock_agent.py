@@ -1,5 +1,6 @@
 # tests/test_stock_agent.py
 from types import SimpleNamespace
+
 from agent_host.agents.stock.agent import StockAgent
 from agent_host.agents.stock.universe import Universe
 from agent_host.models import InboundMessage

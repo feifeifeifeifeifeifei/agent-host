@@ -1,6 +1,9 @@
 import re
+
 from agent_host.agents.stock.leveraged import (
-    LEVERAGED_UNDERLYING, catalyst_symbol, is_leveraged,
+    LEVERAGED_UNDERLYING,
+    catalyst_symbol,
+    is_leveraged,
 )
 
 

@@ -1,4 +1,5 @@
 # agent-host
+![CI](https://github.com/feifeifeifeifeifeifei/agent-host/actions/workflows/ci.yml/badge.svg)
 
 > 🇨🇳 中文说明见 [README.zh.md](README.zh.md).
 

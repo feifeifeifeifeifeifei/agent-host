@@ -1,9 +1,9 @@
-from datetime import date, datetime
+from datetime import date
 
 from agent_host.agents.stock.agent import StockAgent
 from agent_host.channels.telegram import TelegramChannel
-from agent_host.services import Services
 from agent_host.models import DigestItem
+from agent_host.services import Services
 
 
 class FakeMarket:

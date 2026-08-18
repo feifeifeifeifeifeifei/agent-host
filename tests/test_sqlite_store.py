@@ -1,5 +1,5 @@
-from agent_host.store.sqlite_store import SqliteStore
 from agent_host.models import ConversationTurn
+from agent_host.store.sqlite_store import SqliteStore
 
 
 def test_memory_roundtrip_and_namespacing(tmp_path):
